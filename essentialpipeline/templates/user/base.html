@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}{% if title %}{{ title }} - {% endif %}EssentialPipeline{% endblock %}
+
+{% block user_nav %}
+<li class="nav-item">
+    <a class="nav-link" href="{{ url_for('user_dashboard.index') }}">
+        <i class="bi bi-speedometer2"></i> Dashboard
+    </a>
+</li>
+<li class="nav-item dropdown">
+    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+        <i class="bi bi-folder"></i> Projects
+    </a>
+    <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="{{ url_for('user_projects.list_projects') }}">All Projects</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('user_projects.new_project') }}">New Project</a></li>
+    </ul>
+</li>
+<li class="nav-item dropdown">
+    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+        <i class="bi bi-play-circle"></i> Tasks
+    </a>
+    <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="#">Recent Runs</a></li>
+        <li><a class="dropdown-item" href="#">Scheduled Tasks</a></li>
+    </ul>
+</li>
+<li class="nav-item dropdown">
+    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+        <i class="bi bi-robot"></i> ML Models
+    </a>
+    <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="#">My Models</a></li>
+        <li><a class="dropdown-item" href="#">Test Model</a></li>
+    </ul>
+</li>
+<li class="nav-item dropdown">
+    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+        <i class="bi bi-rocket-takeoff"></i> Deployments
+    </a>
+    <ul class="dropdown-menu">
+        <li><a class="dropdown-item" href="#">My Deployments</a></li>
+        <li><a class="dropdown-item" href="#">Request Deployment</a></li>
+    </ul>
+</li>
+<li class="nav-item">
+    <a class="nav-link" href="#">
+        <i class="bi bi-file-earmark-text"></i> Logs
+    </a>
+</li>
+{% endblock %}
+
+{% block admin_nav %}
+{% if current_user and current_user.is_admin %}
+<li class="nav-item">
+    <a class="nav-link text-warning" href="{{ url_for('admin.index') }}">
+        <i class="bi bi-shield-check"></i> Admin
+    </a>
+</li>
+{% endif %}
+{% endblock %}

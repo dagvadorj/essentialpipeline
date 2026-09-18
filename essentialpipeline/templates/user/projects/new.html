@@ -1,0 +1,66 @@
+{% extends "user/base.html" %}
+
+{% block title %}New Project{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="bi bi-folder-plus"></i> New Project</h1>
+        <p class="text-muted">Create a new pipeline project.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 col-md-10">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Project Name *</label>
+                        <input type="text" 
+                               class="form-control form-control-lg" 
+                               id="name" 
+                               name="name" 
+                               required
+                               placeholder="Enter project name">
+                        <div class="form-text">Give your project a descriptive name.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" 
+                                  id="description" 
+                                  name="description" 
+                                  rows="3"
+                                  placeholder="Describe your project..."></textarea>
+                        <div class="form-text">Brief description of what this project does.</div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="project_file" class="form-label">Project File (ZIP)</label>
+                        <input type="file" 
+                               class="form-control" 
+                               id="project_file" 
+                               name="project_file" 
+                               accept=".zip">
+                        <div class="form-text">
+                            Upload a ZIP file containing your Python project. 
+                            <em>Optional - you can add files later.</em>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-check"></i> Create Project
+                        </button>
+                        <a href="{{ url_for('user_projects.list_projects') }}" 
+                           class="btn btn-outline-secondary btn-lg">
+                            Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,316 @@
+{% extends "user/base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="bi bi-speedometer2"></i> Dashboard</h1>
+        <p class="text-muted">Welcome to EssentialPipeline. Here's an overview of your pipeline activity.</p>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <i class="bi bi-folder fs-1 text-primary"></i>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="text-muted mb-1">Projects</h6>
+                        <h3 class="mb-0">{{ user_projects_count }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <i class="bi bi-play-circle fs-1 text-success"></i>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="text-muted mb-1">Running Tasks</h6>
+                        <h3 class="mb-0">{{ running_tasks_count }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <i class="bi bi-hourglass-split fs-1 text-warning"></i>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="text-muted mb-1">Queued Tasks</h6>
+                        <h3 class="mb-0">{{ queued_tasks_count }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <i class="bi bi-exclamation-triangle fs-1 text-danger"></i>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="text-muted mb-1">Failed Tasks</h6>
+                        <h3 class="mb-0">{{ failed_tasks_count }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Content Row -->
+<div class="row">
+    <!-- Left Column: Projects and Tasks -->
+    <div class="col-lg-6">
+        <!-- Recent Projects -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-folder"></i> Recent Projects</h5>
+                <a href="{{ url_for('user_projects.new_project') }}" class="btn btn-sm btn-primary">
+                    <i class="bi bi-plus"></i> New Project
+                </a>
+            </div>
+            <div class="card-body">
+                {% if user_projects %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Updated</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for project in user_projects %}
+                            <tr>
+                                <td>
+                                    <a href="{{ url_for('user_projects.detail_project', project_id=project.id) }}">
+                                        {{ project.name }}
+                                    </a>
+                                </td>
+                                <td>{{ project.description or '-' }}</td>
+                                <td>
+                                    <small class="text-muted">
+                                        {{ project.updated_at.strftime('%Y-%m-%d %H:%M') if project.updated_at else '-' }}
+                                    </small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ project.status_color|default('secondary') }}">
+                                        {{ project.status|default('Unknown')|upper }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('user_projects.detail_project', project_id=project.id) }}" 
+                                       class="btn btn-sm btn-outline-primary btn-action">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <a href="#" class="btn btn-sm btn-outline-secondary btn-action">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-folder-x text-muted fs-1"></i>
+                    <p class="mt-2 text-muted">No projects yet. <a href="{{ url_for('user_projects.new_project') }}">Create your first project</a>.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Recent Task Runs -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-play-circle"></i> Recent Task Runs</h5>
+                <a href="{{ url_for('user_dashboard.index') }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+            </div>
+            <div class="card-body">
+                <div id="recent-runs-container">
+                    {% if recent_runs %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Task</th>
+                                    <th>Project</th>
+                                    <th>Status</th>
+                                    <th>Start Time</th>
+                                    <th>Duration</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for run in recent_runs %}
+                                <tr>
+                                    <td>{{ run.task.name if run.task else 'Unknown' }}</td>
+                                    <td>{{ run.task.project.name if run.task and run.task.project else 'Unknown' }}</td>
+                                    <td>
+                                        <span class="badge bg-{{ run.status_color|default('secondary') }}">
+                                            {{ run.status|upper }}
+                                        </span>
+                                    </td>
+                                    <td>{{ run.start_time.strftime('%Y-%m-%d %H:%M') if run.start_time else '-' }}</td>
+                                    <td>{{ run.duration_seconds|default(0) }}s</td>
+                                    <td>
+                                        <a href="#" class="btn btn-sm btn-outline-primary btn-action">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-play-circle text-muted fs-1"></i>
+                        <p class="mt-2 text-muted">No task runs yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Right Column: Deployments and Activity -->
+    <div class="col-lg-6">
+        <!-- Recent Deployments -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-rocket-takeoff"></i> Recent Deployments</h5>
+                <a href="#" class="btn btn-sm btn-primary">
+                    <i class="bi bi-plus"></i> New Deployment
+                </a>
+            </div>
+            <div class="card-body">
+                {% if recent_deployments %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Project</th>
+                                <th>Environment</th>
+                                <th>Status</th>
+                                <th>Requested</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for deployment in recent_deployments %}
+                            <tr>
+                                <td>{{ deployment.project_version.project.name if deployment.project_version and deployment.project_version.project else 'Unknown' }}</td>
+                                <td>{{ deployment.environment.name if deployment.environment else 'Unknown' }}</td>
+                                <td>
+                                    <span class="badge bg-{{ deployment.status_color|default('secondary') }}">
+                                        {{ deployment.status|replace('_', ' ')|title }}
+                                    </span>
+                                </td>
+                                <td>{{ deployment.requested_at.strftime('%Y-%m-%d %H:%M') if deployment.requested_at else '-' }}</td>
+                                <td>
+                                    <a href="#" class="btn btn-sm btn-outline-primary btn-action">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-rocket text-muted fs-1"></i>
+                    <p class="mt-2 text-muted">No deployments yet.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Recent Logs -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Recent Activity</h5>
+                <a href="#" class="btn btn-sm btn-outline-secondary">View All</a>
+            </div>
+            <div class="card-body">
+                {% if recent_logs %}
+                <div class="log-viewer-small">
+                    {% for log in recent_logs %}
+                    <div class="log-line level-{{ log.level }}">
+                        <span class="timestamp text-muted">
+                            {{ log.timestamp.strftime('%H:%M:%S') if log.timestamp else '-' }}
+                        </span>
+                        <span class="level-badge badge bg-{{ log.level }} ms-2">
+                            {{ log.level|upper }}
+                        </span>
+                        <span class="message ms-2">
+                            {{ log.message|truncate(100, True) }}
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-file-earmark-x text-muted fs-1"></i>
+                    <p class="mt-2 text-muted">No recent activity.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .log-viewer-small {
+        max-height: 300px;
+        overflow-y: auto;
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+    }
+    
+    .log-viewer-small .log-line {
+        padding: 3px 0;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .log-viewer-small .log-line.level-debug { color: #6c757d; }
+    .log-viewer-small .log-line.level-info { color: #0d6efd; }
+    .log-viewer-small .log-line.level-warning { color: #ffc107; }
+    .log-viewer-small .log-line.level-error { color: #dc3545; }
+    .log-viewer-small .log-line.level-critical { color: #dc3545; font-weight: bold; }
+    
+    .level-badge {
+        font-size: 0.7rem;
+    }
+</style>
+{% endblock %}

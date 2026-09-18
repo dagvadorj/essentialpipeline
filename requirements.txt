@@ -1,0 +1,28 @@
+# Core Framework
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+Flask-Admin==1.6.1
+Flask-JWT-Extended==4.5.3
+Flask-WTF==1.1.1
+
+# Database
+mysql-connector-python==8.3.0
+SQLAlchemy==2.0.36
+
+# Scheduler
+APScheduler==3.10.4
+
+# Migrations
+alembic==1.13.1
+
+# Execution
+python-dotenv==1.0.0
+pyyaml==6.0.2
+docker==7.0.0
+
+# Security
+cryptography==42.0.0
+bandit==1.7.7
+
+# Optional: Security scanning
+safety==2.3.5

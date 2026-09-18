@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}{% if title %}{{ title }} - {% endif %}Admin - EssentialPipeline{% endblock %}
+
+{% block user_nav %}
+<li class="nav-item">
+    <a class="nav-link" href="{{ url_for('user_dashboard.index') }}">
+        <i class="bi bi-speedometer2"></i> Dashboard
+    </a>
+</li>
+<li class="nav-item">
+    <a class="nav-link" href="{{ url_for('user_projects.list_projects') }}">
+        <i class="bi bi-folder"></i> Projects
+    </a>
+</li>
+{% endblock %}
+
+{% block admin_nav %}
+<li class="nav-item">
+    <a class="nav-link active text-warning" href="#">
+        <i class="bi bi-shield-check"></i> Admin
+    </a>
+</li>
+{% endblock %}
+
+{% block auth_nav %}
+<li class="nav-item">
+    <a class="nav-link" href="{{ url_for('user_dashboard.index') }}">
+        <i class="bi bi-house"></i> User Dashboard
+    </a>
+</li>
+<li class="nav-item dropdown">
+    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+        <i class="bi bi-person-circle"></i> Admin
+    </a>
+    <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#"><i class="bi bi-person"></i> Profile</a></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="#"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+    </ul>
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="bi bi-shield-check"></i> Admin Panel
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <!-- Admin Sidebar -->
+        <div class="card">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> Administration</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush">
+                    <a href="{{ url_for('admin.index') }}" 
+                       class="list-group-item list-group-item-action {% if request.path == url_for('admin.index') %}active{% endif %}">
+                        <i class="bi bi-speedometer2"></i> Dashboard
+                    </a>
+                    
+                    <a href="#" class="list-group-item list-group-item-action">
+                        <i class="bi bi-people"></i> Governance
+                    </a>
+                    <a href="{{ url_for('admin_governance.list_groups') }}" 
+                       class="list-group-item list-group-item-action ms-4">
+                        <i class="bi bi-people-fill"></i> Groups
+                    </a>
+                    <a href="#" 
+                       class="list-group-item list-group-item-action ms-4">
+                        <i class="bi bi-person-check"></i> Users
+                    </a>
+                    <a href="#" 
+                       class="list-group-item list-group-item-action ms-4">
+                        <i class="bi bi-key"></i> Permissions
+                    </a>
+                    
+                    <a href="#" class="list-group-item list-group-item-action">
+                        <i class="bi bi-plug"></i> Connections
+                    </a>
+                    <a href="#" 
+                       class="list-group-item list-group-item-action ms-4">
+                        <i class="bi bi-database"></i> Database
+                    </a>
+                    <a href="#" 
+                       class="list-group-item list-group-item-action ms-4">
+                        <i class="bi bi-hdd"></i> Storage
+                    </a>
+                    
+                    <a href="#" class="list-group-item list-group-item-action">
+                        <i class="bi bi-globe"></i> Environments
+                    </a>
+                    
+                    <a href="#" class="list-group-item list-group-item-action">
+                        <i class="bi bi-file-earmark-text"></i> Logs
+                    </a>
+                    <a href="#" 
+                       class="list-group-item list-group-item-action ms-4">
+                        <i class="bi bi-journal"></i> Audit Logs
+                    </a>
+                    
+                    <a href="#" class="list-group-item list-group-item-action">
+                        <i class="bi bi-graph-up"></i> Monitoring
+                    </a>
+                    <a href="#" 
+                       class="list-group-item list-group-item-action ms-4">
+                        <i class="bi bi-cpu"></i> System Metrics
+                    </a>
+                    <a href="#" 
+                       class="list-group-item list-group-item-action ms-4">
+                        <i class="bi bi-bell"></i> Alerts
+                    </a>
+                    
+                    <a href="#" class="list-group-item list-group-item-action">
+                        <i class="bi bi-gear"></i> Settings
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-9">
+        {% block admin_content %}{% endblock %}
+    </div>
+</div>
+{% endblock %}

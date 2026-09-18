@@ -1,0 +1,53 @@
+{% extends "user/base.html" %}
+
+{% block title %}Upload Version: {{ project.name }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="bi bi-upload"></i> Upload New Version</h1>
+        <p class="text-muted">Upload a new version of "{{ project.name }}".</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 col-md-10">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="project_file" class="form-label">Project File (ZIP) *</label>
+                        <input type="file" 
+                               class="form-control" 
+                               id="project_file" 
+                               name="project_file" 
+                               accept=".zip" 
+                               required>
+                        <div class="form-text">Upload a ZIP file containing your updated Python project.</div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="changelog" class="form-label">Changelog</label>
+                        <textarea class="form-control" 
+                                  id="changelog" 
+                                  name="changelog" 
+                                  rows="5"
+                                  placeholder="What's new in this version?"></textarea>
+                        <div class="form-text">Describe the changes in this version.</div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-upload"></i> Upload Version
+                        </button>
+                        <a href="{{ url_for('user_projects.detail_project', project_id=project.id) }}" 
+                           class="btn btn-outline-secondary btn-lg">
+                            Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
