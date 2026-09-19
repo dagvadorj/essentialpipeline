@@ -88,14 +88,19 @@ def create_app(config_env=None):
     register_middleware(app)
     
     # Initialize scheduler
-    from essentialpipeline.services.scheduler import init_scheduler
+    from essentialpipeline.services.scheduler import init_scheduler, schedule_all_tasks
     init_scheduler(app)
-    
+
     # Create database tables (development only)
     if app.config.get('ENV') == 'development':
         with app.app_context():
             db.create_all()
-    
+
+    # Register any active cron-scheduled tasks with APScheduler, after the
+    # tasks table above is guaranteed to exist.
+    with app.app_context():
+        schedule_all_tasks()
+
     return app
 
 

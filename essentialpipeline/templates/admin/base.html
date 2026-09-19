@@ -64,42 +64,42 @@
                         <i class="bi bi-speedometer2"></i> Dashboard
                     </a>
                     
-                    <a href="#" class="list-group-item list-group-item-action">
+                    <a href="{{ url_for('admin_governance.dashboard') }}" class="list-group-item list-group-item-action">
                         <i class="bi bi-people"></i> Governance
                     </a>
-                    <a href="{{ url_for('admin_governance.list_groups') }}" 
+                    <a href="{{ url_for('admin_governance.list_groups') }}"
                        class="list-group-item list-group-item-action ms-4">
                         <i class="bi bi-people-fill"></i> Groups
                     </a>
-                    <a href="#" 
+                    <a href="{{ url_for('user.index_view') }}"
                        class="list-group-item list-group-item-action ms-4">
                         <i class="bi bi-person-check"></i> Users
                     </a>
-                    <a href="#" 
+                    <a href="{{ url_for('permission.index_view') }}"
                        class="list-group-item list-group-item-action ms-4">
                         <i class="bi bi-key"></i> Permissions
                     </a>
-                    
-                    <a href="#" class="list-group-item list-group-item-action">
+
+                    <a href="{{ url_for('admin_governance.list_connections') }}" class="list-group-item list-group-item-action">
                         <i class="bi bi-plug"></i> Connections
                     </a>
-                    <a href="#" 
+                    <a href="{{ url_for('databaseconnection.index_view') }}"
                        class="list-group-item list-group-item-action ms-4">
                         <i class="bi bi-database"></i> Database
                     </a>
-                    <a href="#" 
+                    <a href="{{ url_for('storageconnection.index_view') }}"
                        class="list-group-item list-group-item-action ms-4">
                         <i class="bi bi-hdd"></i> Storage
                     </a>
-                    
-                    <a href="#" class="list-group-item list-group-item-action">
+
+                    <a href="{{ url_for('environment.index_view') }}" class="list-group-item list-group-item-action">
                         <i class="bi bi-globe"></i> Environments
                     </a>
-                    
-                    <a href="#" class="list-group-item list-group-item-action">
+
+                    <a href="{{ url_for('admin_governance.list_audit_logs') }}" class="list-group-item list-group-item-action">
                         <i class="bi bi-file-earmark-text"></i> Logs
                     </a>
-                    <a href="#" 
+                    <a href="{{ url_for('admin_governance.list_audit_logs') }}"
                        class="list-group-item list-group-item-action ms-4">
                         <i class="bi bi-journal"></i> Audit Logs
                     </a>

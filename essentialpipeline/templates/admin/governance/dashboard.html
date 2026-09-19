@@ -1,0 +1,73 @@
+{% extends "admin/base.html" %}
+
+{% block admin_content %}
+<h2 class="mb-4"><i class="bi bi-people"></i> Governance</h2>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4 col-sm-6">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <h3>{{ counts.groups }}</h3>
+                <p class="text-muted mb-2">Groups</p>
+                <a href="{{ url_for('admin_governance.list_groups') }}" class="btn btn-sm btn-outline-primary">View</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <h3>{{ counts.permissions }}</h3>
+                <p class="text-muted mb-2">Permissions</p>
+                <a href="{{ url_for('permission.index_view') }}" class="btn btn-sm btn-outline-secondary">Manage</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <h3>{{ counts.environments }}</h3>
+                <p class="text-muted mb-2">Environments</p>
+                <a href="{{ url_for('environment.index_view') }}" class="btn btn-sm btn-outline-secondary">Manage</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <h3>{{ counts.connections }}</h3>
+                <p class="text-muted mb-2">Connections</p>
+                <a href="{{ url_for('admin_governance.list_connections') }}" class="btn btn-sm btn-outline-primary">View</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <h3>{{ counts.clearances }}</h3>
+                <p class="text-muted mb-2">Connection Clearances</p>
+                <a href="{{ url_for('admin_governance.list_groups') }}" class="btn btn-sm btn-outline-primary">Manage via Groups</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <h3><i class="bi bi-journal"></i></h3>
+                <p class="text-muted mb-2">Audit Logs</p>
+                <a href="{{ url_for('admin_governance.list_audit_logs') }}" class="btn btn-sm btn-outline-primary">Query</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <p class="text-muted mb-0">
+            Groups and Permissions have full CRUD here plus basic record management via
+            <a href="{{ url_for('admin.index') }}">Flask-Admin</a>. This page adds what that
+            can't: resolving connection clearances to real connection names, testing stored
+            connection credentials, and querying the audit log.
+        </p>
+    </div>
+</div>
+{% endblock %}

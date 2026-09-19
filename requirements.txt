@@ -18,7 +18,7 @@ alembic==1.13.1
 # Execution
 python-dotenv==1.0.0
 pyyaml==6.0.2
-docker==7.0.0
+docker==7.1.0
 
 # Security
 cryptography==42.0.0

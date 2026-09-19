@@ -23,7 +23,12 @@
                                name="project_file" 
                                accept=".zip" 
                                required>
-                        <div class="form-text">Upload a ZIP file containing your updated Python project.</div>
+                        <div class="form-text">
+                            Upload a ZIP file containing your updated Python project.
+                            Don't have one handy?
+                            <a href="{{ url_for('user_projects.download_example_project') }}">Download the example project</a>
+                            to try it out.
+                        </div>
                     </div>
                     
                     <div class="mb-4">

@@ -27,16 +27,23 @@ job_store = None
 executor = None
 shutdown_flag = threading.Event()
 
+# The Flask app, kept so background threads (ThreadPoolExecutor workers,
+# APScheduler jobs) can push an app context before touching db.session or
+# current_app - neither a request context nor an app context exists in
+# those threads otherwise.
+_app = None
+
 
 def init_scheduler(app):
     """
     Initialize the scheduler with the Flask app
-    
+
     Args:
         app: Flask application
     """
-    global scheduler, job_store, executor
-    
+    global scheduler, job_store, executor, _app
+
+    _app = app
     config = get_config()
     
     # Create thread pool
@@ -108,7 +115,7 @@ def schedule_all_tasks():
         try:
             # Schedule the task
             job = scheduler.add_job(
-                execute_task,
+                _execute_task_entrypoint,
                 trigger=CronTrigger.from_crontab(task.schedule_cron),
                 args=[task.id],
                 kwargs={'triggered_by': 'scheduler'},
@@ -133,46 +140,65 @@ def schedule_all_tasks():
     return scheduled_count
 
 
-def execute_task(task_id: int, triggered_by: str = 'manual', user_id: int = None):
+def _execute_task_entrypoint(task_id: int, triggered_by: str = 'manual', user_id: int = None, task_run_id: int = None):
+    """
+    Entry point used by the ThreadPoolExecutor and APScheduler jobs, both of
+    which run outside any Flask request - pushes an app context (via the
+    app captured in `_app` by init_scheduler) before delegating to
+    execute_task, which needs one for db.session/current_app.
+    """
+    with _app.app_context():
+        execute_task(task_id, triggered_by=triggered_by, user_id=user_id, task_run_id=task_run_id)
+
+
+def execute_task(task_id: int, triggered_by: str = 'manual', user_id: int = None, task_run_id: int = None):
     """
     Execute a task
-    
+
     Args:
         task_id: ID of the task to execute
         triggered_by: How the task was triggered (scheduler, manual, api, upstream)
         user_id: ID of the user who triggered the task (if applicable)
+        task_run_id: Reuse an already-created TaskRun (e.g. one created
+            synchronously by queue_task_execution so the caller has an id
+            to show immediately) instead of creating a new one
     """
     from essentialpipeline import db
     from essentialpipeline.models import Task, TaskRun, ExecutionLog
     from essentialpipeline.utils.docker import DockerContainer, DockerExecutionError
     from essentialpipeline.config import get_config
     import traceback
-    
+
     config = get_config()
-    
+
     # Get task
     task = Task.query.get(task_id)
     if not task:
         logger.error(f"Task {task_id} not found")
         return
-    
+
     if not task.is_active:
         logger.warning(f"Task {task_id} is not active")
         return
-    
-    # Create task run record
-    task_run = TaskRun(
-        task_id=task.id,
-        status='pending',
-        triggered_by=triggered_by,
-        triggered_by_user_id=user_id,
-        start_time=datetime.utcnow()
-    )
-    db.session.add(task_run)
-    db.session.flush()
-    
+
+    if task_run_id:
+        task_run = TaskRun.query.get(task_run_id)
+        if not task_run:
+            logger.error(f"TaskRun {task_run_id} not found")
+            return
+    else:
+        task_run = TaskRun(
+            task_id=task.id,
+            status='pending',
+            triggered_by=triggered_by,
+            triggered_by_user_id=user_id,
+            start_time=datetime.utcnow()
+        )
+        db.session.add(task_run)
+        db.session.flush()
+
     task_run_id = task_run.id
-    
+
     try:
         # Update task run status
         task_run.status = 'running'
@@ -265,28 +291,23 @@ def execute_task_in_container(task: Task, task_run: TaskRun) -> dict:
     from essentialpipeline.config import get_config
     import tempfile
     import os
-    
+
     config = get_config()
-    
+
     if not config.DOCKER_ENABLED:
         # Fallback to local execution (not recommended for production)
         return execute_task_locally(task, task_run)
-    
+
     # Create working directory
     with tempfile.TemporaryDirectory() as temp_dir:
+        container = None
         try:
-            # Get project files
             project = task.project
-            if project and project.current_version:
-                files = project.current_version.files
-                for file in files:
-                    file_path = os.path.join(temp_dir, file.file_path)
-                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                    
-                    # Copy file from storage to temp directory
-                    # In production, this would copy from Garage
-                    # For now, we'll skip this step
-            
+            if not project or not project.current_version:
+                raise DockerExecutionError(f"Task {task.id} has no project version to execute")
+
+            extract_project_archive(project.current_version, temp_dir)
+
             # Create Docker container
             container = DockerContainer(
                 image='python:3.11-slim',
@@ -314,13 +335,22 @@ def execute_task_in_container(task: Task, task_run: TaskRun) -> dict:
             else:
                 command = ['python', 'main.py']
             
-            # Create and start container
-            container.create_container()
+            # Create and start container. The actual task command runs via
+            # exec_run() below, not as the container's own process, so it
+            # needs a long-lived keep-alive process to exec into - without
+            # one, python:3.11-slim's default CMD (the python3 REPL) hits
+            # EOF on its unattached stdin and exits almost immediately,
+            # tearing the container down mid-exec (exit code 137).
+            container.create_container(command=['sleep', 'infinity'])
             result = container.execute(command, timeout=config.EXECUTION_TIMEOUT)
             
-            # Add metadata
+            # Add metadata. container.execute() merges stdout+stderr into
+            # 'output' (exec_run's default when demux isn't requested); mirror
+            # it into 'logs' so execute_task's `if result.get('logs')` check
+            # actually captures it into an ExecutionLog instead of no-op'ing.
             result['duration'] = (datetime.utcnow() - task_run.start_time).total_seconds()
-            
+            result['logs'] = result.get('output', '')
+
             return result
             
         except DockerExecutionError as e:
@@ -340,7 +370,57 @@ def execute_task_in_container(task: Task, task_run: TaskRun) -> dict:
                 'duration': (datetime.utcnow() - task_run.start_time).total_seconds()
             }
         finally:
-            container.cleanup()
+            if container is not None:
+                container.cleanup()
+
+
+def extract_project_archive(project_version, dest_dir: str) -> None:
+    """
+    Extract a project version's uploaded zip archive into dest_dir, so it
+    can be bind-mounted into the execution container.
+
+    Guards against zip-slip (archive entries with `../` or absolute paths
+    that would write outside dest_dir): this runs on the host, before the
+    Docker container - and its isolation - exists, so an unsafe entry has
+    to be rejected here rather than relied on to be harmless once inside
+    the container.
+
+    Args:
+        project_version: ProjectVersion whose uploaded archive to extract
+        dest_dir: Existing directory to extract into
+
+    Raises:
+        DockerExecutionError: no uploaded archive, archive missing on
+            disk, corrupt zip, or an unsafe path inside the archive
+    """
+    import os
+    import zipfile
+    from essentialpipeline.utils.docker import DockerExecutionError
+    from essentialpipeline.utils.storage import get_file_path
+
+    project_file = project_version.files[0] if project_version.files else None
+    if not project_file or not project_file.storage_path:
+        raise DockerExecutionError(
+            f"Project version {project_version.id} has no uploaded archive to execute"
+        )
+
+    zip_path = get_file_path(project_file.storage_path)
+    if not os.path.isfile(zip_path):
+        raise DockerExecutionError(f"Uploaded project archive not found on disk: {zip_path}")
+
+    dest_dir_real = os.path.realpath(dest_dir)
+
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            for member in zf.infolist():
+                member_path = os.path.realpath(os.path.join(dest_dir, member.filename))
+                if member_path != dest_dir_real and not member_path.startswith(dest_dir_real + os.sep):
+                    raise DockerExecutionError(
+                        f"Refusing to extract unsafe path '{member.filename}' from project archive"
+                    )
+            zf.extractall(dest_dir)
+    except zipfile.BadZipFile as e:
+        raise DockerExecutionError(f"Uploaded project archive is not a valid zip file: {e}")
 
 
 def execute_task_locally(task: Task, task_run: TaskRun) -> dict:
@@ -432,40 +512,52 @@ def trigger_dependent_tasks(task_id: int):
                 )
                 db.session.add(task_run)
                 db.session.commit()
-                
+
                 logger.info(f"Triggered dependent task {dep.task_id} ({dependent_task.name}) from task {task_id}")
-                
-                # Queue for execution
-                queue_task_execution(dep.task_id, task_run.id)
+
+                # Queue for execution, reusing the TaskRun just created above
+                queue_task_execution(dep.task_id, triggered_by='upstream', task_run_id=task_run.id)
 
 
-def queue_task_execution(task_id: int, task_run_id: int = None):
+def queue_task_execution(task_id: int, triggered_by: str = 'manual', user_id: int = None, task_run_id: int = None) -> TaskRun:
     """
-    Queue a task for execution
-    
+    Queue a task for execution on the thread pool.
+
     Args:
         task_id: ID of the task to execute
-        task_run_id: Optional ID of the task run record
+        triggered_by: How the task was triggered (manual, api, upstream)
+        user_id: ID of the user who triggered the task (if applicable)
+        task_run_id: Reuse an already-created TaskRun (e.g. from
+            trigger_dependent_tasks) instead of creating a new one
+
+    Returns:
+        The TaskRun record (existing or newly created) for this run
     """
-    from essentialpipeline import db
     from essentialpipeline.models import TaskRun
-    
-    # If no task_run_id provided, create one
-    if not task_run_id:
+
+    if task_run_id:
+        task_run = TaskRun.query.get(task_run_id)
+        if not task_run:
+            raise ValueError(f"TaskRun {task_run_id} not found")
+    else:
+        # Created synchronously (not inside execute_task) so the caller has
+        # a run id to show immediately, before the background thread runs.
+        # 'pending' (not 'queued' - not a value TaskRun.status's enum
+        # allows) matches what execute_task itself would set on a fresh run.
         task_run = TaskRun(
             task_id=task_id,
-            status='queued',
-            triggered_by='api',
+            status='pending',
+            triggered_by=triggered_by,
+            triggered_by_user_id=user_id,
             start_time=datetime.utcnow()
         )
         db.session.add(task_run)
         db.session.commit()
-        task_run_id = task_run.id
-    
-    # Submit to executor
-    future = executor.submit(execute_task, task_id, 'manual')
-    
-    logger.info(f"Queued task {task_id} for execution")
+
+    executor.submit(_execute_task_entrypoint, task_id, triggered_by, user_id, task_run.id)
+
+    logger.info(f"Queued task {task_id} for execution (run {task_run.id})")
+    return task_run
 
 
 def run_pending_tasks():
@@ -514,7 +606,7 @@ def schedule_task(task_id: int):
         
         # Schedule the task
         job = scheduler.add_job(
-            execute_task,
+            _execute_task_entrypoint,
             trigger=CronTrigger.from_crontab(task.schedule_cron),
             args=[task.id],
             kwargs={'triggered_by': 'scheduler'},

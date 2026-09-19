@@ -2,15 +2,40 @@
 User Projects routes for EssentialPipeline
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
+import io
 import os
+import zipfile
 from essentialpipeline import db
 from essentialpipeline.models import Project, ProjectVersion, ProjectFile
 from essentialpipeline.utils.storage import save_file
 
 bp = Blueprint('user_projects', __name__, template_folder='../../../templates/user/projects')
+
+# This file lives at essentialpipeline/app/routes/user/projects.py; walk up
+# to the essentialpipeline/ package root to find examples/hello_pipeline.
+_PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+EXAMPLE_PROJECT_DIR = os.path.abspath(os.path.join(_PACKAGE_DIR, 'examples', 'hello_pipeline'))
+
+
+@bp.route('/example')
+@jwt_required()
+def download_example_project():
+    """Download a minimal example project zip, ready to upload as-is."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for filename in sorted(os.listdir(EXAMPLE_PROJECT_DIR)):
+            zf.write(os.path.join(EXAMPLE_PROJECT_DIR, filename), arcname=filename)
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='hello-pipeline-example.zip'
+    )
 
 
 @bp.route('/')
@@ -61,13 +86,14 @@ def new_project():
                     changelog='Initial version'
                 )
                 db.session.add(version)
+                db.session.flush()
                 project.current_version_id = version.id
-                
+
                 # Create project file record
                 project_file_record = ProjectFile(
                     project_version_id=version.id,
                     file_path=file_result['filename'],
-                    file_size=file_result.get('size'),
+                    file_size=os.path.getsize(file_result['path']),
                     storage_path=file_result['relative_path']
                 )
                 db.session.add(project_file_record)
@@ -128,13 +154,17 @@ def detail_project(project_id):
     files = []
     if current_version:
         files = ProjectFile.query.filter_by(project_version_id=current_version.id).all()
-    
+
+    from essentialpipeline.models import Task
+    tasks = Task.query.filter_by(project_id=project_id).order_by(Task.created_at.desc()).all()
+
     return render_template(
         'detail.html',
         title=f'Project: {project.name}',
         project=project,
         versions=versions,
-        files=files
+        files=files,
+        tasks=tasks
     )
 
 

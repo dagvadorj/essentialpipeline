@@ -2,15 +2,21 @@
 
 ## Status Summary
 
-**Working end-to-end today**: user registration/login (JWT, both API bearer tokens and a browser login page/cookie session bridge - Decision 3), project CRUD with zip upload and versioning (API and web UI), the web dashboard, the Flask-Admin governance panel, and Alembic migrations validated against MySQL. All 32 data models across the governance/execution/monitoring/deployment layers are implemented.
+**Working end-to-end today, fully verified including real container execution**: user registration/login (JWT, both API bearer tokens and a browser login page/cookie session bridge - Decision 3), project CRUD with zip upload and versioning (API and web UI), the web dashboard, the Flask-Admin governance panel, and Alembic migrations validated against MySQL. All 32 data models across the governance/execution/monitoring/deployment layers are implemented. Task execution is wired end to end and confirmed against a real Docker daemon: create a task (API or web UI) → trigger it (`POST /api/v1/tasks/<id>/trigger`, `POST /user/tasks/<id>/trigger`, or a cron schedule registered at startup) → extract the project's uploaded zip → run it in a container → capture its output into an `ExecutionLog` → mark the `TaskRun` `success`. Verified with the `hello_pipeline` example project's real stdout coming back through the whole path.
 
-**Implemented but not wired to anything**: the Docker execution wrapper (`utils/docker.py`) and the APScheduler-based task scheduler (`services/scheduler.py`) are both functionally complete on their own, but nothing in the running application calls them - no route triggers a task run, and `schedule_all_tasks()` is never called at startup.
+Getting a real Docker daemon in the loop (the user started Docker Desktop) surfaced four bugs in `utils/docker.py`/`services/scheduler.py` that the earlier "Docker unavailable" testing couldn't reach, all now fixed:
+- `docker==7.0.0` doesn't work with `requests>=2.32` (raises `Not supported URL scheme http+docker` regardless of whether a daemon is running) - bumped to `docker==7.1.0` in `requirements.txt`.
+- `containers.create()` doesn't auto-pull a missing image the way `docker run` does - added `DockerContainer._ensure_image()`.
+- The container was created with no process of its own, so `python:3.11-slim`'s default CMD (the `python3` REPL) hit EOF on its unattached stdin and exited almost immediately, tearing the container down mid-`exec_run` (exit code 137, always, on any machine). Fixed by giving the container a `sleep infinity` keep-alive process to exec into.
+- `Container.exec_run()` has no `timeout` parameter in docker-py at all - passing one was a guaranteed `TypeError` the first time this code path ever ran anywhere. Replaced with a worker-thread-plus-`join(timeout)` pattern that force-stops the container if a task overruns, since an unbounded hang would otherwise permanently occupy one of a fixed-size `ThreadPoolExecutor`.
+- `execute_task_in_container`'s result dict never had a `'logs'` key, so `execute_task`'s `if result.get('logs')` check for saving an `ExecutionLog` was always false - no run's output was ever being captured. Fixed by mirroring `result['output']` (exec_run's merged stdout+stderr) into `result['logs']`.
 
 **Not started**: Garage integration (project files currently live on local disk only), security scanning (bandit/safety are listed as dependencies but not called from anywhere), ML model execution, the deployment/approval workflow, monitoring/alerting, rate limiting, API documentation, and automated tests. No git repository has been initialized yet.
 
-**Two open contradictions between a recorded decision and the actual code**, to resolve before building further on either:
+**One open contradiction between a recorded decision and the actual code**, to resolve before building further on it:
 - **Storage** (Decision 4): committed to Garage; `utils/storage.py` only writes to local disk, and `services/scheduler.py` has a comment acknowledging the Garage copy step is skipped.
-- **Task orchestration** (Decision 5): committed to a linear pipeline, DAG deferred; `services/scheduler.py` already implements dependency-graph execution against the `TaskDependency` model (`execute_task` skips on unmet dependencies, `trigger_dependent_tasks` cascades on success). That logic predates the decision and needs to be simplified to match it, or the decision needs revisiting now that the DAG logic already exists.
+
+(Task orchestration, formerly the other open contradiction, is resolved - see Decision 5.)
 
 **Described in `README.md` but not yet implemented**: notebook-based progressive development (Decision 8: one project = one pipeline = one notebook - decided, but the notebook side has zero implementation and is missing from the Web UI layer), secret detection and container-image scanning (Decision 6 - decided, but neither has a library chosen or a service written), the project manifest/package format (`project.yaml`), medallion-style data architecture guidance, and the model-lineage traceability chain.
 
@@ -70,11 +76,11 @@ The arrows show conceptual layering, not literal call order. In the actual imple
 
 ### 1. Isolation: Docker
 Each uploaded project runs in its own container. Rejected virtualenv (too little isolation) and Kubernetes (unnecessary at current scale).
-Status: container lifecycle implemented in `utils/docker.py` (create/start/stop/execute/logs/cleanup); not yet triggered by any route.
+Status: container lifecycle implemented in `utils/docker.py` (create/start/stop/execute/logs/cleanup), triggered by both `POST /api/v1/tasks/<id>/trigger` and `POST /user/tasks/<id>/trigger`, and verified end to end against a real Docker daemon (see Status Summary for the bugs that surfaced and were fixed along the way).
 
 ### 2. Scheduler: APScheduler, not Celery/Redis
 Implemented with APScheduler + a `ThreadPoolExecutor` instead of Celery/Redis - one less moving piece (no message broker) at the current scale. Revisit if concurrency needs outgrow a single process.
-Status: implemented in `services/scheduler.py`; not yet invoked from app startup or any route (see Status Summary).
+Status: implemented in `services/scheduler.py`; `schedule_all_tasks()` is now called at startup (`app/__init__.py`, after `db.create_all()`) so cron-scheduled tasks register with APScheduler, and manual/API triggers go through the `ThreadPoolExecutor` via `queue_task_execution()`. Both paths push a Flask app context (`_execute_task_entrypoint`) before touching `db.session`, since neither APScheduler's background thread nor the executor's worker threads have a Flask request context of their own.
 
 ### 3. Auth: JWT (Flask-JWT-Extended)
 Stateless, standard fit for a REST API.
@@ -84,9 +90,10 @@ Status: implemented for both API and web UI. `/login` (`app/routes/user/auth.py`
 Keeps large binary files (project archives, model artifacts, logs) out of the relational database.
 Status: not implemented. `utils/storage.py` writes only to local disk under `UPLOAD_FOLDER`. Needs either real Garage client work or a decision to stay on local disk for now.
 
-### 5. Task orchestration: linear pipeline, DAG deferred
-Sequential task execution (`Task.sequence_order`, not yet added to the model) instead of a dependency graph, cycle detection, and topological sort, until there's a proven need for it.
-Status: contradicted by existing code - `services/scheduler.py` already implements DAG-style dependency execution against `TaskDependency`. Needs reconciling: simplify the scheduler to match this decision, or revisit the decision.
+### 5. Task orchestration: dependency graph via `TaskDependency` (revised from linear pipeline)
+Originally decided as sequential execution (`Task.sequence_order`, deferring a dependency graph "until there's a proven need for it"). Revisited: `services/scheduler.py` already implements the DAG-style dependency execution this was meant to defer - `execute_task` skips a task when any `TaskDependency` it declares hasn't had a successful run, and `trigger_dependent_tasks` cascades to dependents on success - and the `TaskDependency` model is already part of the shipped schema. Ripping that out to replace it with a `sequence_order` column that doesn't exist yet would throw away working code to reach a simpler design with no functional need driving the simplification. `Task.sequence_order` is dropped from the plan; task order within a project is expressed entirely through `TaskDependency` edges.
+No cycle detection exists yet (`execute_task`/`trigger_dependent_tasks` walk `TaskDependency` without checking for cycles) - a cyclic dependency would currently deadlock a task into permanently "skipped" rather than erroring. Needs a cycle check (e.g. at task-dependency creation time) before this is exposed to users.
+Status: decided. Scheduler logic already matches this decision; no scheduler changes needed for this specific item. Remaining gap is the cycle-detection check above, plus wiring described in the Status Summary (nothing calls `schedule_all_tasks()` or triggers a manual run yet).
 
 ### 6. Security scanning: README's four layers, split by whether isolation already covers the risk
 Follows README's four scanning layers (source code, dependency, secret detection, container image), split into blocking vs. audit-only by the same rule: if Docker isolation already covers the risk, a blocking gate on top is mostly false-positive friction and stays audit-only; if the finding is a real, usable credential regardless of isolation, it blocks.
@@ -101,8 +108,8 @@ Plain links/forms with full page reloads. No separate build pipeline or client-s
 Status: dashboard, project pages, and the Flask-Admin panel work this way today. Real browser use is now unblocked by the Decision 3 login/session bridge.
 
 ### 8. Cardinality: one project = one pipeline = one notebook
-A project does not contain multiple named pipelines or multiple notebooks. Each project has exactly one pipeline (its tasks in `sequence_order`, Decision 5) and exactly one notebook (its progressive-development surface, per README's `Notebook → Task → Pipeline → Project` flow). "Pipeline" is documentation language for "this project's task sequence," not a separately nameable/orderable object - no `Pipeline` model is needed.
-Status: decided. Pipeline side is implemented via `sequence_order` (Decision 5). Notebook side is not implemented at all: no model, no in-browser editor/kernel, no route, and it doesn't appear in the Web UI Layer of the Architecture Overview diagram above.
+A project does not contain multiple named pipelines or multiple notebooks. Each project has exactly one pipeline (its tasks and the `TaskDependency` edges between them, Decision 5) and exactly one notebook (its progressive-development surface, per README's `Notebook → Task → Pipeline → Project` flow). "Pipeline" is documentation language for "this project's task graph," not a separately nameable/orderable object - no `Pipeline` model is needed.
+Status: decided. Pipeline side is implemented via `Task`/`TaskDependency`, scoped to a project through `Task.project_id` (Decision 5). Notebook side is not implemented at all: no model, no in-browser editor/kernel, no route, and it doesn't appear in the Web UI Layer of the Architecture Overview diagram above.
 
 ---
 
@@ -112,10 +119,10 @@ Status: decided. Pipeline side is implemented via `sequence_order` (Decision 5).
 - [x] Models: `User`, `Group`, `Permission`, `Environment`, `DatabaseConnection`, `StorageConnection`, `GroupConnectionClearance`, `AuditLog`
 - [x] Connection-string encryption (`utils/security.py`, Fernet)
 - [x] Audit logging middleware (best-effort, non-blocking)
-- [ ] Governance API/UI: groups, permissions, environments, connections, clearances CRUD (`admin_governance` route and its API equivalents are stubs)
-- [ ] Connection health-check endpoint / connection testing utility
+- [x] Governance API/UI: groups (create, detail, permission assignment), connection clearances (grant/update/revoke, with the polymorphic `connection_type`/`connection_id` resolved to a real connection name - the one thing Flask-Admin's auto-generated forms couldn't do), and connection testing, both as a web UI (`app/routes/admin/governance.py`, gated by the previously-unused `admin_required` decorator) and an equivalent API (`app/routes/api/v1/admin.py`, `/api/v1/admin/...`). Permissions/Environments/raw connection CRUD deliberately left to Flask-Admin rather than duplicated, since it already handles those tables well - the governance UI links out to it for that. Verified end to end via the real HTTP test client, including a non-admin 403 and a real (correctly-failing) live connection test.
+- [x] Connection health-check endpoint / connection testing utility (`services/connection_health.py`) - always confirms the stored credential decrypts; attempts a real live connect for `mysql` connections (the only DB driver installed) and reports "decrypt-only, can't live-test" for connection types/storage with no driver installed, rather than silently pretending to have tested them
 - [ ] Environment promotion state machine (`Deployment.status` models the states; no service logic drives transitions)
-- [ ] Audit log query API (currently only visible via Flask-Admin)
+- [x] Audit log query API - both `GET /admin/governance/audit-logs` (web UI, paginated, filterable by action/resource_type/user_id) and `GET /api/v1/admin/audit-logs` (same filters, JSON, paginated)
 - [ ] Governance Gate as an explicit pre-publish check (README's lifecycle has `Security Scan → Governance Gate → Publish Version` as a distinct step; currently there is no publish-blocking governance check at all, only the clearance/audit models it would eventually use)
 - [ ] Secret detection scanning (Decision 6)
 - [ ] Container image scanning (Decision 6)
@@ -123,10 +130,11 @@ Status: decided. Pipeline side is implemented via `sequence_order` (Decision 5).
 ### Execution
 - [x] Models: `Project`, `ProjectVersion`, `ProjectFile`, `SecurityParseResult`, `SecurityFinding`, `Dependency`, `DependencyCache`, `ExecutionEnvironment`
 - [x] Project CRUD + zip upload + versioning, both API and web UI
-- [x] Docker container lifecycle (`utils/docker.py`) - not yet triggered by anything (see Decision 1)
+- [x] Docker container lifecycle (`utils/docker.py`) - triggered on every task run (see Decision 1) and verified against a real daemon, including a task's actual stdout coming back through `ExecutionLog`
 - [ ] File storage on Garage (currently local disk - Decision 4)
-- [ ] Uploaded zip is unpacked/validated (currently stored as-is, contents never inspected)
+- [ ] Uploaded zip is unpacked/validated at upload time (currently stored as-is; it's now unpacked at task-execution time instead - see `extract_project_archive()` under Scheduling & Deployment - but nothing checks it's a valid/well-formed project until then)
 - [ ] Project manifest format (README describes a `project.yaml` plus `pipeline.yaml`, `notebook/`, `src/`, `tests/`, `Dockerfile` layout; no manifest schema is defined and nothing checks a zip against it)
+- [x] Downloadable example/template project zip - `essentialpipeline/examples/hello_pipeline/`, served zipped-on-the-fly at `GET /user/projects/example` and linked from the new-project and upload-version forms. Beyond the single `main.py` smoke-test script, it now has a small 3-task ETL pipeline (`extract.py` → `transform.py` → `load.py`, sharing a `pipeline_data.py` helper module) over synthetic order data, so the example demonstrates a project with several real tasks rather than just one. Each step falls back to regenerating its input deterministically if the previous step's output file isn't present, since task runs don't share a persistent volume with each other yet (Decision 4) - documented in the example's own `README.md`. All three tasks verified running successfully end to end against a real Docker daemon.
 - [ ] Dependency extraction/caching from a project's `requirements.txt`
 - [ ] Security scanning wired up (Decision 6)
 - [ ] Medallion-style data architecture guidance (README: raw → cleaned → transformed → analytical → feature) - conceptual only; no tooling, template project, or convention enforces this progression today
@@ -139,7 +147,7 @@ Status: decided. Pipeline side is implemented via `sequence_order` (Decision 5).
 - [x] Dashboard (stats computed on page load; the `/user/stats` JSON endpoint exists but is currently unused)
 - [x] Project pages: list, create, detail, edit, upload, delete
 - [x] Admin panel via Flask-Admin: Users, Groups, Permissions, Environments, DB/Storage Connections, Audit Logs, Projects, Tasks, ML Models
-- [ ] Task pages (stub, redirects to dashboard)
+- [x] Task pages: list, create, detail with run history, manual trigger (`templates/user/tasks/`); also surfaced on the project detail page
 - [ ] Deployment pages (stub)
 - [ ] Log viewer pages (stub)
 - [ ] Notebook editor page (Decision 8) - not started; a project's one notebook has no browser surface at all today
@@ -147,9 +155,11 @@ Status: decided. Pipeline side is implemented via `sequence_order` (Decision 5).
 
 ### Scheduling & Deployment
 - [x] Models: `Task`, `TaskRun`, `TaskDependency`, `MLModel`, `MLModelVersion`, `MLModelExecution`, `Deployment`, `Approval`
-- [x] Scheduler service written (`services/scheduler.py`) - not wired in; implements DAG dependency logic that contradicts Decision 5
-- [ ] `Task.sequence_order` column + linear execution (replaces the DAG-dependency logic once reconciled)
-- [ ] A task can actually be triggered from the API or UI (currently creating a task only inserts a row - nothing runs it)
+- [x] Scheduler service written (`services/scheduler.py`) - implements the DAG dependency logic Decision 5 now commits to; wired in (see below)
+- [ ] Cycle detection on `TaskDependency` (Decision 5) - a cyclic dependency currently deadlocks a task as permanently "skipped" instead of erroring
+- [x] `schedule_all_tasks()` called at startup (`app/__init__.py`, after `db.create_all()`) so cron-scheduled tasks get registered with APScheduler
+- [x] A task can actually be triggered from the API (`POST /api/v1/tasks/<id>/trigger`, `GET /api/v1/tasks/<id>/runs`) and the web UI (`user/tasks.py` list/new/detail/trigger pages, plus a Tasks section on the project detail page); verified end to end through the real HTTP test client - task creation, trigger, zip extraction, and TaskRun status transitions (`pending` → `running` → `failed`, since Docker itself isn't available in this dev environment) all confirmed working
+- [x] Uploaded project zip is extracted at execution time (`extract_project_archive()` in `services/scheduler.py`) so a triggered task has real code to run; guards against zip-slip since this runs on the host before the container's isolation exists
 - [ ] ML model artifact upload/download, model execution service
 - [ ] Environment promotion workflow / approval state machine / rollback
 - [ ] Model lineage chain surfaced/queryable (README: `Model Version → Project Version → Runtime Environment → Training Run → Input Data/Features`) - the individual FK fields exist across `MLModelVersion`/`MLModelExecution`/`ProjectVersion`/`ExecutionEnvironment`, but nothing joins or exposes the full chain
@@ -166,7 +176,7 @@ Status: decided. Pipeline side is implemented via `sequence_order` (Decision 5).
 - [x] JWT authentication (register/login/refresh/logout/me/list-users/password change)
 - [x] Project endpoints (CRUD, upload, versions, task creation)
 - [ ] Task/model/deployment/log endpoints (currently 501 stubs)
-- [ ] RBAC applied to routes (`admin_required`/`project_access_required` exist in `middleware/` but aren't used anywhere yet)
+- [ ] RBAC applied to routes - `admin_required` is now used (all of `admin/governance.py` and `api/v1/admin.py`, see Governance); `project_access_required` still isn't used anywhere (project routes inline their own `owner_user_id` check instead)
 - [ ] Rate limiting
 - [ ] Request/response schema validation
 - [ ] OpenAPI/Swagger documentation
@@ -441,14 +451,13 @@ CREATE TABLE dependency_cache (
     FOREIGN KEY (dependency_id) REFERENCES dependencies(id)
 );
 
--- Tasks (linear pipeline steps; executed in sequence_order within a project - no DAG/dependency graph yet, see Decision 5)
+-- Tasks (a project's pipeline steps; order and fan-out come from task_dependencies below, not a sequence column - see Decision 5)
 CREATE TABLE tasks (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_id INT NOT NULL,
     name VARCHAR(255) NOT NULL,
     task_type ENUM('python', 'sql', 'bash', 'ml_model') DEFAULT 'python',
     script_path VARCHAR(512),  -- Path to script within project
-    sequence_order INT NOT NULL DEFAULT 0,  -- Execution order within the project's linear pipeline
     schedule_cron VARCHAR(100),  -- e.g., '0 * * * *' for hourly
     is_active BOOLEAN DEFAULT TRUE,
     last_run DATETIME,
@@ -456,6 +465,15 @@ CREATE TABLE tasks (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+
+-- Task Dependencies (DAG edges within a project's task graph - Decision 5; no cycle detection enforced yet)
+CREATE TABLE task_dependencies (
+    task_id INT NOT NULL,             -- the task that has a dependency
+    depends_on_task_id INT NOT NULL,  -- the task it depends on
+    PRIMARY KEY (task_id, depends_on_task_id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id),
+    FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id)
 );
 
 -- Task Runs
@@ -683,11 +701,13 @@ CREATE TABLE alert_rules (
 ## Success Criteria
 
 ### MVP
-- [ ] Governance API/UI usable, not just the data models
+- [x] Governance API/UI usable, not just the data models (groups, clearances, connection testing, and audit log queries - web UI and API, verified end to end)
 - [x] Project upload working
-- [ ] A task can actually be executed (scheduler wired to a trigger)
+- [x] A task can actually be executed (scheduler wired to a trigger, verified against a real Docker daemon end to end)
 - [x] API layer with authentication
 - [x] Web UI reachable from a browser (login/session bridge closed - Decision 3)
+
+**All four MVP criteria are now met.**
 
 ### Full Feature Set
 - [ ] All layers implemented, not just modeled
@@ -703,4 +723,4 @@ CREATE TABLE alert_rules (
 ---
 
 *Plan created: 2026-09-08*
-*Last updated: 2026-09-19 (reconciled against `README.md`: Decision 8 sets one project = one pipeline = one notebook and flags the notebook editor as missing from the Web UI layer; Decision 6 extended to README's four scanning layers, split blocking vs. audit-only by whether Docker isolation already covers the risk - no decisions remain open; also tracked project manifest, data architecture guidance, and model lineage; Decision 3 login/session bridge implemented and verified working - web UI is now reachable from a plain browser)*
+*Last updated: 2026-09-19 - all four MVP criteria are now done. Decision 3's login/session bridge closed the web UI gap; task execution (Decisions 1, 2, 5) is wired end to end and verified against a real Docker daemon, including a task's actual output coming back through `ExecutionLog`; and the governance API/UI (groups, permission assignment, connection clearances with the polymorphic connection reference resolved to a real name, connection health-checks, and audit log queries) is built and verified for both the web UI (`admin/governance.py`) and the API (`api/v1/admin.py`), gated by the previously-unused `admin_required` decorator. Getting a real Docker daemon in the loop surfaced and fixed four bugs that "Docker unavailable" testing alone couldn't reach: a `docker-py`/`requests` version incompatibility, a missing image-pull step, a container with no keep-alive process (guaranteed exit 137 on any machine), and a `timeout` kwarg `exec_run()` doesn't support (guaranteed `TypeError`) - meaning none of this had ever actually run successfully before today. Also fixed a long-standing crash on the bare `/admin` route (`Admin` has no `.index_url`). Decision 5 was revised to keep the already-working `TaskDependency` DAG logic instead of adding a `sequence_order` column. Also reconciled against `README.md` (Decision 8 cardinality, Decision 6's four scanning layers) and added a downloadable example project (`essentialpipeline/examples/hello_pipeline/`) that doubled as the fixture used to verify task execution. Known gaps going forward: no cycle detection on `TaskDependency`; upload-time zip validation still doesn't exist; Governance Gate (a publish-blocking check that actually consumes clearances) isn't wired up yet; `project_access_required` middleware still isn't used anywhere.*

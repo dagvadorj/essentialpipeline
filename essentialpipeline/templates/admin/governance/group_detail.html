@@ -1,0 +1,155 @@
+{% extends "admin/base.html" %}
+
+{% block admin_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-0"><i class="bi bi-people-fill"></i> {{ group.name }}</h2>
+        <p class="text-muted mb-0">{{ group.description or 'No description' }}</p>
+    </div>
+    <a href="{{ url_for('admin_governance.list_groups') }}" class="btn btn-outline-primary">
+        <i class="bi bi-arrow-left"></i> Back to Groups
+    </a>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-person"></i> Members ({{ group.users|length }})</div>
+            <div class="card-body p-0">
+                {% if group.users %}
+                <ul class="list-group list-group-flush">
+                    {% for user in group.users %}
+                    <li class="list-group-item">{{ user.username }} <span class="text-muted">({{ user.email }})</span></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    No members yet. Assign users to this group via
+                    <a href="{{ url_for('user.index_view') }}">Flask-Admin's User editor</a>.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><i class="bi bi-key"></i> Permissions</div>
+            <div class="card-body">
+                {% if all_permissions %}
+                <form method="POST" action="{{ url_for('admin_governance.update_group_permissions', group_id=group.id) }}">
+                    <div class="mb-3" style="max-height: 260px; overflow-y: auto;">
+                        {% for perm in all_permissions %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="permission_ids"
+                                   value="{{ perm.id }}" id="perm{{ perm.id }}"
+                                   {{ 'checked' if perm.id in group_permission_ids }}>
+                            <label class="form-check-label" for="perm{{ perm.id }}">
+                                {{ perm.name }} <span class="text-muted">({{ perm.resource_type }}.{{ perm.action }})</span>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-check"></i> Save Permissions
+                    </button>
+                </form>
+                {% else %}
+                <div class="text-muted">
+                    No permissions defined yet. Create some via
+                    <a href="{{ url_for('permission.index_view') }}">Flask-Admin</a>.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-plug"></i> Connection Clearances</div>
+    <div class="card-body">
+        {% if clearances %}
+        <div class="table-responsive mb-3">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Connection</th>
+                        <th>Type</th>
+                        <th>Access Level</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in clearances %}
+                    <tr>
+                        <td>
+                            {% if entry.connection %}
+                                {{ entry.connection.name }}
+                            {% else %}
+                                <span class="text-danger">Connection #{{ entry.clearance.connection_id }} no longer exists</span>
+                            {% endif %}
+                        </td>
+                        <td><span class="badge bg-secondary">{{ entry.clearance.connection_type }}</span></td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin_governance.update_clearance', clearance_id=entry.clearance.id) }}"
+                                  class="d-flex gap-2">
+                                <select name="access_level" class="form-select form-select-sm" style="width: auto;">
+                                    {% for level in ['none', 'read', 'write', 'admin'] %}
+                                    <option value="{{ level }}" {{ 'selected' if entry.clearance.access_level == level }}>{{ level }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
+                            </form>
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin_governance.delete_clearance', clearance_id=entry.clearance.id) }}"
+                                  onsubmit="return confirm('Revoke this clearance?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No connection clearances yet.</p>
+        {% endif %}
+
+        {% if connections %}
+        <hr>
+        <h6>Grant Access</h6>
+        <form method="POST" action="{{ url_for('admin_governance.add_clearance', group_id=group.id) }}" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label">Connection</label>
+                <select name="connection_ref" class="form-select" required>
+                    {% for c in connections %}
+                    <option value="{{ c.type }}:{{ c.id }}">{{ c.name }} ({{ c.type }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="form-label">Access Level</label>
+                <select name="access_level" class="form-select">
+                    {% for level in ['none', 'read', 'write', 'admin'] %}
+                    <option value="{{ level }}" {{ 'selected' if level == 'read' }}>{{ level }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-plus"></i> Grant
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <p class="text-muted mb-0">
+            No connections exist yet. Create one via
+            <a href="{{ url_for('databaseconnection.index_view') }}">Flask-Admin</a>.
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

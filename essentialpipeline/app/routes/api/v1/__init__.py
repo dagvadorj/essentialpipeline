@@ -7,7 +7,7 @@ from flask import Blueprint
 bp = Blueprint('v1', __name__, url_prefix='/v1')
 
 # Import all API v1 routes
-from essentialpipeline.app.routes.api.v1 import projects, tasks, models, deployments, logs, auth
+from essentialpipeline.app.routes.api.v1 import projects, tasks, models, deployments, logs, auth, admin
 
 # Register blueprints
 bp.register_blueprint(projects.bp)
@@ -16,6 +16,7 @@ bp.register_blueprint(models.bp)
 bp.register_blueprint(deployments.bp)
 bp.register_blueprint(logs.bp)
 bp.register_blueprint(auth.bp)
+bp.register_blueprint(admin.bp)
 
 # Health check for API
 @bp.route('/health')

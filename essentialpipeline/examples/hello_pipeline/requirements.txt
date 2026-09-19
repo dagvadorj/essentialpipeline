@@ -1,0 +1,3 @@
+# No third-party dependencies - main.py only uses the standard library.
+# Add your own packages here once dependency installation is wired up
+# for task execution.

@@ -1,0 +1,82 @@
+{% extends "user/base.html" %}
+
+{% block title %}New Task{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="bi bi-plus-circle"></i> New Task</h1>
+        <p class="text-muted">Add a task to one of your projects.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 col-md-10">
+        <div class="card">
+            <div class="card-body">
+                {% if projects %}
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="project_id" class="form-label">Project *</label>
+                        <select class="form-select" id="project_id" name="project_id" required>
+                            <option value="" disabled {{ 'selected' if not selected_project_id }}>Select a project</option>
+                            {% for project in projects %}
+                            <option value="{{ project.id }}" {{ 'selected' if project.id == selected_project_id }}>
+                                {{ project.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Task Name *</label>
+                        <input type="text" class="form-control" id="name" name="name" required
+                               placeholder="e.g. Run pipeline">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="task_type" class="form-label">Task Type</label>
+                        <select class="form-select" id="task_type" name="task_type">
+                            <option value="python" selected>python</option>
+                            <option value="bash">bash</option>
+                            <option value="sql">sql</option>
+                            <option value="ml_model">ml_model</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="script_path" class="form-label">Script Path</label>
+                        <input type="text" class="form-control" id="script_path" name="script_path"
+                               placeholder="main.py">
+                        <div class="form-text">Path to the entry script within the project's zip. Defaults to main.py.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="schedule_cron" class="form-label">Cron Schedule</label>
+                        <input type="text" class="form-control" id="schedule_cron" name="schedule_cron"
+                               placeholder="0 * * * *">
+                        <div class="form-text">Optional. Leave blank to only run this task manually.</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-check"></i> Create Task
+                        </button>
+                        <a href="{{ url_for('user_tasks.list_tasks') }}" class="btn btn-outline-secondary btn-lg">
+                            Cancel
+                        </a>
+                    </div>
+                </form>
+                {% else %}
+                <div class="text-center py-3">
+                    <p class="text-muted">You need a project before you can add a task.</p>
+                    <a href="{{ url_for('user_projects.new_project') }}" class="btn btn-primary">
+                        <i class="bi bi-plus"></i> New Project
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -153,7 +153,9 @@ def configure_admin(app, admin_instance, db_instance):
     # Add to app
     admin_instance.init_app(app)
     
-    # Add admin index route
+    # Redirect the bare /admin (no trailing slash) to Flask-Admin's actual
+    # index view at /admin/ - Admin has no .index_url attribute, so this
+    # previously crashed with AttributeError on every visit.
     @app.route('/admin')
     @jwt_required()
     def admin_index():
@@ -162,4 +164,4 @@ def configure_admin(app, admin_instance, db_instance):
         user = User.query.get(user_id)
         if not user or not user.is_admin:
             abort(403)
-        return redirect(admin_instance.index_url)
+        return redirect(url_for('admin.index'))

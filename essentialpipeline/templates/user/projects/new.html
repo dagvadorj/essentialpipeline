@@ -44,8 +44,11 @@
                                name="project_file" 
                                accept=".zip">
                         <div class="form-text">
-                            Upload a ZIP file containing your Python project. 
+                            Upload a ZIP file containing your Python project.
                             <em>Optional - you can add files later.</em>
+                            Don't have one handy?
+                            <a href="{{ url_for('user_projects.download_example_project') }}">Download the example project</a>
+                            to try it out.
                         </div>
                     </div>
                     

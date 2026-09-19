@@ -1,0 +1,93 @@
+{% extends "admin/base.html" %}
+
+{% block admin_content %}
+<h2 class="mb-4"><i class="bi bi-plug"></i> Connections</h2>
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-database"></i> Database Connections</span>
+        <a href="{{ url_for('databaseconnection.index_view') }}" class="btn btn-sm btn-outline-secondary">Manage in Flask-Admin</a>
+    </div>
+    <div class="card-body p-0">
+        {% if db_connections %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Environment</th>
+                        <th>Active</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for conn in db_connections %}
+                    <tr>
+                        <td>{{ conn.name }}</td>
+                        <td><span class="badge bg-secondary">{{ conn.connection_type }}</span></td>
+                        <td>{{ conn.environment.name if conn.environment else '-' }}</td>
+                        <td>{{ 'Yes' if conn.is_active else 'No' }}</td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin_governance.test_connection', conn_type='database', connection_id=conn.id) }}">
+                                <button type="submit" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-heart-pulse"></i> Test
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">No database connections yet.</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-hdd"></i> Storage Connections</span>
+        <a href="{{ url_for('storageconnection.index_view') }}" class="btn btn-sm btn-outline-secondary">Manage in Flask-Admin</a>
+    </div>
+    <div class="card-body p-0">
+        {% if storage_connections %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Endpoint</th>
+                        <th>Bucket</th>
+                        <th>Environment</th>
+                        <th>Active</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for conn in storage_connections %}
+                    <tr>
+                        <td>{{ conn.name }}</td>
+                        <td>{{ conn.endpoint }}</td>
+                        <td>{{ conn.bucket }}</td>
+                        <td>{{ conn.environment.name if conn.environment else '-' }}</td>
+                        <td>{{ 'Yes' if conn.is_active else 'No' }}</td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin_governance.test_connection', conn_type='storage', connection_id=conn.id) }}">
+                                <button type="submit" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-heart-pulse"></i> Test
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">No storage connections yet.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

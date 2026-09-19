@@ -8,6 +8,7 @@ import os
 import tempfile
 import shutil
 import logging
+import threading
 from pathlib import Path
 from typing import Optional, Dict, Any
 import uuid
@@ -71,7 +72,21 @@ class DockerContainer:
         self.container_id = None
         self.run_id = str(uuid.uuid4())
         
-    def create_container(self, name: Optional[str] = None, 
+    def _ensure_image(self) -> None:
+        """
+        Pull self.image if it isn't already present locally.
+
+        containers.create() (unlike `docker run`) does not auto-pull a
+        missing image - it fails with a 404 "No such image" instead.
+        """
+        try:
+            self.client.images.get(self.image)
+        except docker.errors.ImageNotFound:
+            logger.info(f"Image {self.image} not found locally, pulling...")
+            self.client.images.pull(self.image)
+            logger.info(f"Pulled image {self.image}")
+
+    def create_container(self, name: Optional[str] = None,
                          command: Optional[list] = None) -> str:
         """
         Create a Docker container
@@ -84,6 +99,8 @@ class DockerContainer:
             Container ID
         """
         try:
+            self._ensure_image()
+
             container_kwargs = {
                 'image': self.image,
                 'working_dir': self.working_dir,
@@ -176,19 +193,43 @@ class DockerContainer:
         """
         if not self.container:
             raise DockerExecutionError("Container not created")
-        
+
         try:
             # Start container if not running
             if self.container.status != 'running':
                 self.start()
-            
-            # Execute command
-            exit_code, output = self.container.exec_run(
-                command,
-                timeout=timeout,
-                workdir=self.working_dir
-            )
-            
+
+            # docker-py's exec_run() has no timeout parameter of its own, so
+            # it's run on a worker thread and the container is force-stopped
+            # if it outlives the deadline - otherwise a runaway task script
+            # would hang this thread (one of a fixed-size pool) forever.
+            exec_result = {}
+
+            def _run_exec():
+                try:
+                    exec_result['exit_code'], exec_result['output'] = self.container.exec_run(
+                        command,
+                        workdir=self.working_dir
+                    )
+                except Exception as exec_error:
+                    exec_result['error'] = exec_error
+
+            exec_thread = threading.Thread(target=_run_exec, daemon=True)
+            exec_thread.start()
+            exec_thread.join(timeout)
+
+            if exec_thread.is_alive():
+                logger.warning(
+                    f"Command in container {self.container_id[:12]} exceeded {timeout}s timeout, stopping container"
+                )
+                self.stop()
+                raise DockerExecutionError(f"Command execution timed out after {timeout}s")
+
+            if 'error' in exec_result:
+                raise exec_result['error']
+
+            exit_code, output = exec_result['exit_code'], exec_result['output']
+
             result = {
                 'exit_code': exit_code,
                 'output': output.decode('utf-8') if output and return_output else '',
@@ -199,13 +240,15 @@ class DockerContainer:
             
             return result
             
+        except DockerExecutionError:
+            raise
         except docker.errors.APIError as e:
             logger.error(f"Docker API error: {e}")
             raise DockerExecutionError(f"Docker API error: {e}")
         except Exception as e:
             logger.error(f"Command execution failed: {e}")
             raise DockerExecutionError(f"Command execution failed: {e}")
-    
+
     def copy_file_to_container(self, host_path: str, container_path: str) -> None:
         """
         Copy a file from host to container

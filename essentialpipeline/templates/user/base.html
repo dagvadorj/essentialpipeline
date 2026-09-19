@@ -22,8 +22,8 @@
         <i class="bi bi-play-circle"></i> Tasks
     </a>
     <ul class="dropdown-menu">
-        <li><a class="dropdown-item" href="#">Recent Runs</a></li>
-        <li><a class="dropdown-item" href="#">Scheduled Tasks</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('user_tasks.list_tasks') }}">All Tasks</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('user_tasks.new_task') }}">New Task</a></li>
     </ul>
 </li>
 <li class="nav-item dropdown">
