@@ -2,7 +2,7 @@
 
 ## Status Summary
 
-**Working end-to-end today**: user registration/login (JWT), project CRUD with zip upload and versioning (API and web UI), the web dashboard, the Flask-Admin governance panel, and Alembic migrations validated against MySQL. All 32 data models across the governance/execution/monitoring/deployment layers are implemented.
+**Working end-to-end today**: user registration/login (JWT, both API bearer tokens and a browser login page/cookie session bridge - Decision 3), project CRUD with zip upload and versioning (API and web UI), the web dashboard, the Flask-Admin governance panel, and Alembic migrations validated against MySQL. All 32 data models across the governance/execution/monitoring/deployment layers are implemented.
 
 **Implemented but not wired to anything**: the Docker execution wrapper (`utils/docker.py`) and the APScheduler-based task scheduler (`services/scheduler.py`) are both functionally complete on their own, but nothing in the running application calls them - no route triggers a task run, and `schedule_all_tasks()` is never called at startup.
 
@@ -11,6 +11,8 @@
 **Two open contradictions between a recorded decision and the actual code**, to resolve before building further on either:
 - **Storage** (Decision 4): committed to Garage; `utils/storage.py` only writes to local disk, and `services/scheduler.py` has a comment acknowledging the Garage copy step is skipped.
 - **Task orchestration** (Decision 5): committed to a linear pipeline, DAG deferred; `services/scheduler.py` already implements dependency-graph execution against the `TaskDependency` model (`execute_task` skips on unmet dependencies, `trigger_dependent_tasks` cascades on success). That logic predates the decision and needs to be simplified to match it, or the decision needs revisiting now that the DAG logic already exists.
+
+**Described in `README.md` but not yet implemented**: notebook-based progressive development (Decision 8: one project = one pipeline = one notebook - decided, but the notebook side has zero implementation and is missing from the Web UI layer), secret detection and container-image scanning (Decision 6 - decided, but neither has a library chosen or a service written), the project manifest/package format (`project.yaml`), medallion-style data architecture guidance, and the model-lineage traceability chain.
 
 Checkboxes in this document track real implementation status, not aspiration - update them as work lands.
 
@@ -23,6 +25,7 @@ Checkboxes in this document track real implementation status, not aspiration - u
 │                Web UI Layer (Flask + Jinja2, server-rendered)         │
 ├─────────────────────────────────────────────────────────────────────┤
 │  User Dashboard    Project CRUD/Upload    Task/Deployment/Log Views   │
+│  Notebook Editor (one per project, not yet implemented - Decision 8)  │
 │  Admin Panel (Flask-Admin: groups, connections, audit logs, etc.)     │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
@@ -75,7 +78,7 @@ Status: implemented in `services/scheduler.py`; not yet invoked from app startup
 
 ### 3. Auth: JWT (Flask-JWT-Extended)
 Stateless, standard fit for a REST API.
-Status: implemented for the API. The web UI reuses the same `@jwt_required()` decorator, which expects a bearer header - there is no login page or cookie/session bridge, so the web UI cannot currently be reached from a plain browser without manually attaching a token.
+Status: implemented for both API and web UI. `/login` (`app/routes/user/auth.py`) authenticates and sets the access/refresh JWTs as httponly cookies (`JWT_TOKEN_LOCATION = ['headers', 'cookies']`); API callers keep using the bearer header, browser navigations to `/user/*` or `/admin/*` with a missing/invalid/expired token now redirect to `/login?next=...` instead of returning raw JSON 401 (`unauthorized_loader`/`invalid_token_loader`/`expired_token_loader` in `app/__init__.py`). CSRF protection is intentionally left off the JWT cookie (`JWT_COOKIE_CSRF_PROTECT = False`) since no form elsewhere in the app has CSRF tokens either - revisit together.
 
 ### 4. Storage: Garage for files, MySQL for metadata
 Keeps large binary files (project archives, model artifacts, logs) out of the relational database.
@@ -85,13 +88,21 @@ Status: not implemented. `utils/storage.py` writes only to local disk under `UPL
 Sequential task execution (`Task.sequence_order`, not yet added to the model) instead of a dependency graph, cycle detection, and topological sort, until there's a proven need for it.
 Status: contradicted by existing code - `services/scheduler.py` already implements DAG-style dependency execution against `TaskDependency`. Needs reconciling: simplify the scheduler to match this decision, or revisit the decision.
 
-### 6. Security scanning: dependency scan blocks, static/AST scan doesn't
-Docker isolation covers container/host escape, so a blocking static-analysis gate on top of that is mostly false-positive friction. Dependency vulnerability scanning (Safety) still blocks, since a running project is granted real DB/storage credentials. Bandit findings are audit-only.
-Status: neither is implemented - both are listed in `requirements.txt` but not called from any service.
+### 6. Security scanning: README's four layers, split by whether isolation already covers the risk
+Follows README's four scanning layers (source code, dependency, secret detection, container image), split into blocking vs. audit-only by the same rule: if Docker isolation already covers the risk, a blocking gate on top is mostly false-positive friction and stays audit-only; if the finding is a real, usable credential regardless of isolation, it blocks.
+- **Source code (AST/SAST, Bandit)**: audit-only. Isolation covers what a malicious code pattern could do at runtime.
+- **Dependency vulnerabilities (Safety)**: blocks. A running project is granted real DB/storage credentials, so a known-vulnerable package is a live risk independent of isolation.
+- **Secret detection**: blocks. A credential accidentally committed into a project is a live, usable credential, same rationale as dependency scanning.
+- **Container image scanning**: audit-only. Same isolation argument as source code - a vulnerable base-image package inside an already-isolated, per-project container is defense-in-depth, not a live credential exposure.
+Status: decided (all four layers), but only two are implemented as dependencies: Safety and Bandit are listed in `requirements.txt` but neither is called from any service. Secret detection and container image scanning have no library chosen and no service written yet.
 
 ### 7. Web UI: server-rendered Flask + Jinja2, no htmx/SPA
 Plain links/forms with full page reloads. No separate build pipeline or client-side framework; a genuinely-needed dynamic refresh later gets a small hand-written `fetch()` call instead of a library.
-Status: dashboard, project pages, and the Flask-Admin panel work this way today. Blocked from real use by the login gap in Decision 3.
+Status: dashboard, project pages, and the Flask-Admin panel work this way today. Real browser use is now unblocked by the Decision 3 login/session bridge.
+
+### 8. Cardinality: one project = one pipeline = one notebook
+A project does not contain multiple named pipelines or multiple notebooks. Each project has exactly one pipeline (its tasks in `sequence_order`, Decision 5) and exactly one notebook (its progressive-development surface, per README's `Notebook → Task → Pipeline → Project` flow). "Pipeline" is documentation language for "this project's task sequence," not a separately nameable/orderable object - no `Pipeline` model is needed.
+Status: decided. Pipeline side is implemented via `sequence_order` (Decision 5). Notebook side is not implemented at all: no model, no in-browser editor/kernel, no route, and it doesn't appear in the Web UI Layer of the Architecture Overview diagram above.
 
 ---
 
@@ -105,6 +116,9 @@ Status: dashboard, project pages, and the Flask-Admin panel work this way today.
 - [ ] Connection health-check endpoint / connection testing utility
 - [ ] Environment promotion state machine (`Deployment.status` models the states; no service logic drives transitions)
 - [ ] Audit log query API (currently only visible via Flask-Admin)
+- [ ] Governance Gate as an explicit pre-publish check (README's lifecycle has `Security Scan → Governance Gate → Publish Version` as a distinct step; currently there is no publish-blocking governance check at all, only the clearance/audit models it would eventually use)
+- [ ] Secret detection scanning (Decision 6)
+- [ ] Container image scanning (Decision 6)
 
 ### Execution
 - [x] Models: `Project`, `ProjectVersion`, `ProjectFile`, `SecurityParseResult`, `SecurityFinding`, `Dependency`, `DependencyCache`, `ExecutionEnvironment`
@@ -112,8 +126,13 @@ Status: dashboard, project pages, and the Flask-Admin panel work this way today.
 - [x] Docker container lifecycle (`utils/docker.py`) - not yet triggered by anything (see Decision 1)
 - [ ] File storage on Garage (currently local disk - Decision 4)
 - [ ] Uploaded zip is unpacked/validated (currently stored as-is, contents never inspected)
+- [ ] Project manifest format (README describes a `project.yaml` plus `pipeline.yaml`, `notebook/`, `src/`, `tests/`, `Dockerfile` layout; no manifest schema is defined and nothing checks a zip against it)
 - [ ] Dependency extraction/caching from a project's `requirements.txt`
 - [ ] Security scanning wired up (Decision 6)
+- [ ] Medallion-style data architecture guidance (README: raw → cleaned → transformed → analytical → feature) - conceptual only; no tooling, template project, or convention enforces this progression today
+
+### Development Experience
+- [ ] Notebook-based development (README's `Notebook → Task → Pipeline → Project → Published Version` progressive workflow; Decision 8: one project = one pipeline = one notebook) - no notebook model, no in-browser notebook editor/kernel, no execution path; a task currently can only be authored as a file inside an uploaded project, not iterated on in-platform. Not present anywhere in the Web UI layer.
 
 ### Web UI
 - [x] Base layout + navigation
@@ -123,7 +142,8 @@ Status: dashboard, project pages, and the Flask-Admin panel work this way today.
 - [ ] Task pages (stub, redirects to dashboard)
 - [ ] Deployment pages (stub)
 - [ ] Log viewer pages (stub)
-- [ ] Login page / session bridge (Decision 3 - blocks real browser use of everything above)
+- [ ] Notebook editor page (Decision 8) - not started; a project's one notebook has no browser surface at all today
+- [x] Login page / session bridge (Decision 3)
 
 ### Scheduling & Deployment
 - [x] Models: `Task`, `TaskRun`, `TaskDependency`, `MLModel`, `MLModelVersion`, `MLModelExecution`, `Deployment`, `Approval`
@@ -132,6 +152,7 @@ Status: dashboard, project pages, and the Flask-Admin panel work this way today.
 - [ ] A task can actually be triggered from the API or UI (currently creating a task only inserts a row - nothing runs it)
 - [ ] ML model artifact upload/download, model execution service
 - [ ] Environment promotion workflow / approval state machine / rollback
+- [ ] Model lineage chain surfaced/queryable (README: `Model Version → Project Version → Runtime Environment → Training Run → Input Data/Features`) - the individual FK fields exist across `MLModelVersion`/`MLModelExecution`/`ProjectVersion`/`ExecutionEnvironment`, but nothing joins or exposes the full chain
 
 ### Monitoring
 - [x] Models: `DeploymentLog`, `SecurityLog`, `ExecutionLog`, `SystemMetric`, `Alert`, `AlertRule`
@@ -234,7 +255,7 @@ essentialdata/
 ### Security
 - **Authentication**: Flask-JWT-Extended 4.5.3
 - **Encryption**: Cryptography 42.0.0 (Fernet, for connection strings)
-- **Scanning**: Safety 2.3.5 (blocking gate), Bandit 1.7.7 (audit/warning only) - neither wired up yet (Decision 6)
+- **Scanning**: Safety 2.3.5 (dependency, blocking) and Bandit 1.7.7 (source/AST, audit-only) are in `requirements.txt` but not wired up yet; secret detection and container image scanning (Decision 6) are decided but no library is chosen and neither is in `requirements.txt` yet
 
 ### Monitoring
 - **Metrics**: not yet chosen/implemented
@@ -380,7 +401,7 @@ CREATE TABLE security_parse_results (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_version_id INT NOT NULL,
     parser_version VARCHAR(50),
-    overall_status ENUM('passed', 'warning', 'failed') DEFAULT 'passed',  -- 'warning' = AST/bandit findings (non-blocking), 'failed' = vulnerable dependency (blocks execution)
+    overall_status ENUM('passed', 'warning', 'failed') DEFAULT 'passed',  -- 'warning' = AST/bandit or container image findings (non-blocking), 'failed' = vulnerable dependency or detected secret (blocks execution) - see Decision 6
     parsed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (project_version_id) REFERENCES project_versions(id)
 );
@@ -651,7 +672,7 @@ CREATE TABLE alert_rules (
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Security vulnerabilities in uploaded projects | High | Docker sandboxed execution (primary control) + blocking dependency-vulnerability scan once wired up; AST/bandit findings are audit-only, review those logs periodically |
+| Security vulnerabilities in uploaded projects | High | Docker sandboxed execution (primary control) + blocking dependency-vulnerability and secret-detection scans once wired up; AST/bandit and container image findings are audit-only, review those logs periodically (Decision 6) |
 | Database connection string security | High | Connection strings are encrypted at rest (`utils/security.py`); never log them; enforce clearance checks once the governance API exists |
 | Docker execution in production | Medium | Resource limits are already parameterized in `utils/docker.py`; revisit Kubernetes only if scale requires it |
 | Performance with many concurrent tasks | Medium | `ThreadPoolExecutor` worker count is configurable (`SCHEDULER_MAX_WORKERS`); revisit APScheduler-vs-Celery (Decision 2) if this becomes a bottleneck |
@@ -666,7 +687,7 @@ CREATE TABLE alert_rules (
 - [x] Project upload working
 - [ ] A task can actually be executed (scheduler wired to a trigger)
 - [x] API layer with authentication
-- [ ] Web UI reachable from a browser (login/session bridge closed - Decision 3)
+- [x] Web UI reachable from a browser (login/session bridge closed - Decision 3)
 
 ### Full Feature Set
 - [ ] All layers implemented, not just modeled
@@ -675,8 +696,11 @@ CREATE TABLE alert_rules (
 - [ ] Comprehensive monitoring and alerting
 - [ ] Web UI covers tasks, deployments, and logs, not just projects/dashboard
 - [ ] Automated test suite
+- [ ] Notebook-based progressive development, one per project, in the Web UI (Decision 8)
+- [ ] Secret detection and container image scanning wired up (Decision 6)
+- [ ] Project manifest (`project.yaml`) defined and validated on upload
 
 ---
 
 *Plan created: 2026-09-08*
-*Last updated: 2026-09-19*
+*Last updated: 2026-09-19 (reconciled against `README.md`: Decision 8 sets one project = one pipeline = one notebook and flags the notebook editor as missing from the Web UI layer; Decision 6 extended to README's four scanning layers, split blocking vs. audit-only by whether Docker isolation already covers the risk - no decisions remain open; also tracked project manifest, data architecture guidance, and model lineage; Decision 3 login/session bridge implemented and verified working - web UI is now reachable from a plain browser)*

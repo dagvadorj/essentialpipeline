@@ -42,13 +42,15 @@ This project aims to provide these capabilities through a **single project-orien
 
 A project is the fundamental isolation and deployment unit.
 
-A project contains the code, pipelines, dependencies, runtime environment, notebooks, configurations, and ML workloads required for a particular data or ML solution.
+A project contains the code, its pipeline, dependencies, runtime environment, its notebook, configurations, and ML workloads required for a particular data or ML solution.
+
+Each project has exactly one pipeline and exactly one notebook. A project is not a container for multiple independently-named pipelines or notebooks - the pipeline is the project's task sequence, and the notebook is the project's single progressive-development surface.
 
 ```text
 Project
-├── Pipelines
-├── Tasks
-├── Notebooks
+├── Pipeline (one)
+│   └── Tasks
+├── Notebook (one)
 ├── Dependencies
 ├── Runtime Environment
 ├── Connections
@@ -60,7 +62,7 @@ Projects are independently versioned and executed.
 
 ### Pipeline
 
-A pipeline defines a sequence of data processing or ML operations and their dependencies.
+A project has exactly one pipeline, defining the sequence of data processing or ML operations that project runs.
 
 ```text
 Source
@@ -78,7 +80,7 @@ Train Model
 Publish Model
 ```
 
-Pipelines can contain different types of tasks, including Python, SQL, data processing, ML, and other execution types.
+A project's pipeline can contain different types of tasks, including Python, SQL, data processing, ML, and other execution types.
 
 ### Task
 
@@ -106,8 +108,8 @@ The package may contain:
 
 ```text
 project.yaml
-pipelines/
-notebooks/
+pipeline.yaml
+notebook/
 src/
 tests/
 requirements.txt
@@ -144,7 +146,7 @@ Published versions are immutable and can be reproduced or rolled back.
 
 The platform is intended to support notebook-based development and testing.
 
-Instead of requiring developers to build and deploy an entire pipeline before testing their code, development can happen progressively:
+Each project has exactly one notebook, which feeds that project's one pipeline. Instead of requiring developers to build and deploy an entire pipeline before testing their code, development can happen progressively within that notebook:
 
 ```text
 Notebook

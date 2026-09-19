@@ -30,6 +30,17 @@ class Config:
     JWT_ALGORITHM = 'HS256'
     JWT_ACCESS_TOKEN_EXPIRES = int(os.environ.get('JWT_ACCESS_TOKEN_EXPIRES', 3600))  # 1 hour
     JWT_REFRESH_TOKEN_EXPIRES = int(os.environ.get('JWT_REFRESH_TOKEN_EXPIRES', 86400))  # 1 day
+
+    # Accept the JWT from either an Authorization header (API clients) or an
+    # httponly cookie (browser session for the /user/* and /admin/* web UI).
+    JWT_TOKEN_LOCATION = ['headers', 'cookies']
+    JWT_COOKIE_SECURE = os.environ.get('JWT_COOKIE_SECURE', 'False').lower() == 'true'
+    JWT_COOKIE_SAMESITE = 'Lax'
+    # No CSRF protection exists anywhere else in this app yet (no Flask-WTF
+    # CSRFProtect, no tokens in any existing form) - disabling it here keeps
+    # the cookie bridge consistent with that baseline rather than silently
+    # fixing only this one path. Revisit together when forms get CSRF tokens.
+    JWT_COOKIE_CSRF_PROTECT = False
     
     # Scheduler
     SCHEDULER_ENABLED = os.environ.get('SCHEDULER_ENABLED', 'True').lower() == 'true'

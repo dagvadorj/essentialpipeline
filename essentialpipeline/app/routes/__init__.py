@@ -13,13 +13,15 @@ def register_routes(app):
     app.register_blueprint(v1.bp, url_prefix='/api/v1')
     
     # User Web UI Routes
+    from essentialpipeline.app.routes.user import auth as user_auth
     from essentialpipeline.app.routes.user import dashboard
     from essentialpipeline.app.routes.user import projects
     from essentialpipeline.app.routes.user import tasks
     from essentialpipeline.app.routes.user import models
     from essentialpipeline.app.routes.user import deployments
     from essentialpipeline.app.routes.user import logs as user_logs
-    
+
+    app.register_blueprint(user_auth.bp)
     app.register_blueprint(dashboard.bp, url_prefix='/user')
     app.register_blueprint(projects.bp, url_prefix='/user/projects')
     app.register_blueprint(tasks.bp, url_prefix='/user/tasks')
