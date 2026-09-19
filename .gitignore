@@ -52,3 +52,5 @@ build/
 # Project files (keep these in the repo for reference)
 !essentialpipeline/templates/
 !static/
+
+PRIORITIZED_WORKS.md

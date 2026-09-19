@@ -4,6 +4,7 @@ Configuration management for EssentialPipeline
 
 import os
 from dotenv import load_dotenv
+from sqlalchemy.pool import StaticPool
 
 # Load environment variables from .env file
 load_dotenv()
@@ -69,10 +70,29 @@ class DevelopmentConfig(Config):
 
 
 class TestingConfig(Config):
-    """Testing configuration"""
+    """
+    Testing configuration - self-contained SQLite in-memory DB (no external
+    MySQL dependency, so the test suite runs anywhere). StaticPool +
+    check_same_thread=False keep the same single connection shared across
+    threads, since a background-thread task run (queue_task_execution's
+    ThreadPoolExecutor) needs to see the same in-memory database the test
+    thread wrote to - the default pooling would otherwise hand each thread
+    its own separate in-memory DB.
+    """
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
-    JWT_ACCESS_TOKEN_EXPIRES = 1  # 1 second for testing
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'poolclass': StaticPool,
+        'connect_args': {'check_same_thread': False},
+    }
+    # Long enough that no test's request/response cycle can spuriously hit
+    # token expiry (the previous 1-second value was a real flakiness risk
+    # for anything doing real Docker work mid-test).
+    JWT_ACCESS_TOKEN_EXPIRES = 3600
+    # APScheduler's SQLAlchemyJobStore is unrelated to what this suite
+    # verifies (schedule_all_tasks() registering cron jobs isn't covered
+    # here) and adds startup complexity against SQLite for no benefit.
+    SCHEDULER_ENABLED = False
 
 
 class ProductionConfig(Config):

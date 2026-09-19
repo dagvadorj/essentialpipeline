@@ -11,7 +11,7 @@ Getting a real Docker daemon in the loop (the user started Docker Desktop) surfa
 - `Container.exec_run()` has no `timeout` parameter in docker-py at all - passing one was a guaranteed `TypeError` the first time this code path ever ran anywhere. Replaced with a worker-thread-plus-`join(timeout)` pattern that force-stops the container if a task overruns, since an unbounded hang would otherwise permanently occupy one of a fixed-size `ThreadPoolExecutor`.
 - `execute_task_in_container`'s result dict never had a `'logs'` key, so `execute_task`'s `if result.get('logs')` check for saving an `ExecutionLog` was always false - no run's output was ever being captured. Fixed by mirroring `result['output']` (exec_run's merged stdout+stderr) into `result['logs']`.
 
-**Not started**: Garage integration (project files currently live on local disk only), security scanning (bandit/safety are listed as dependencies but not called from anywhere), ML model execution, the deployment/approval workflow, monitoring/alerting, rate limiting, API documentation, and automated tests. No git repository has been initialized yet.
+**Not started**: Garage integration (project files currently live on local disk only), ML model execution, the deployment/approval workflow, monitoring/alerting, rate limiting, API documentation, and CI. (This line used to also list security scanning and "no git repository" - both stale: security scanning was wired up in an earlier pass, see Governance below, and this has been a real git repo with a GitHub remote since early in the project's history - the Foundation checklist below had simply never been updated to reflect either.)
 
 **One open contradiction between a recorded decision and the actual code**, to resolve before building further on it:
 - **Storage** (Decision 4): committed to Garage; `utils/storage.py` only writes to local disk, and `services/scheduler.py` has a comment acknowledging the Garage copy step is skipped.
@@ -185,10 +185,10 @@ Status: decided. Pipeline side is implemented via `Task`/`TaskDependency`, scope
 - [x] Flask/SQLAlchemy application factory, dependency set fixed and installable in a clean venv
 - [x] Alembic initialized; initial migration generated and validated against MySQL
 - [x] `.env`/config wired to real values (DB host, JWT/encryption secrets)
-- [ ] Git repository initialized
+- [x] Git repository initialized - this was stale; a real repo with a GitHub remote (`origin`) has existed since early in the project's history, this checkbox had just never been updated
 
 ### Testing & Deployment
-- [ ] Automated tests (none exist)
+- [x] Automated tests - `tests/` (pytest), covering the highest-risk/most-recently-fixed areas: task execution (mocked Docker, plus a small real-Docker-daemon suite auto-skipped when none is reachable), cycle detection, the Governance Gate, security scanning, zip/manifest validation, `admin_required`/`project_access_required`, and upload/task routes end to end. 104 tests, self-contained (in-memory SQLite, no external DB needed) and passing reliably (verified stable across repeated full-suite runs). `tests/README.md` covers how to run it and a real bug found while writing it: `get_config()` ignores `create_app()`'s `config_env` argument and reads `FLASK_ENV` from the OS environment instead - worked around at the test-harness level (`conftest.py` sets `FLASK_ENV=testing`), not yet fixed at the source.
 - [ ] CI pipeline
 - [ ] Dockerfile for the app itself (distinct from `utils/docker.py`, which containerizes *uploaded projects*, not this app)
 
@@ -715,10 +715,10 @@ CREATE TABLE alert_rules (
 - [ ] ML model execution functional
 - [ ] Comprehensive monitoring and alerting
 - [ ] Web UI covers tasks, deployments, and logs, not just projects/dashboard
-- [ ] Automated test suite
+- [x] Automated test suite - `tests/` (pytest, 104 tests) - see Testing & Deployment
 - [ ] Notebook-based progressive development, one per project, in the Web UI (Decision 8)
-- [ ] Secret detection and container image scanning wired up (Decision 6)
-- [ ] Project manifest (`project.yaml`) defined and validated on upload
+- [ ] Secret detection and container image scanning wired up (Decision 6) - Bandit + Safety are wired (see Governance); these two remaining layers still have no library chosen
+- [x] Project manifest (`project.yaml`) defined and validated on upload - see Execution (this was already done and just stale here)
 
 ---
 
@@ -733,4 +733,6 @@ CREATE TABLE alert_rules (
 6. **`project_access_required`** wired into all 8 project-scoped API routes, which surfaced a real bug (API `abort(403)` was returning HTML, not JSON - fixed, also fixing `admin_required`'s responses). Web UI project routes deliberately kept their own flash+redirect instead of adopting this decorator (better UX than a raw 403 page).
 7. **Cycle detection** on `TaskDependency`, wired into Flask-Admin's form validation (the only place a dependency edge can be created), which surfaced and fixed a real SQLAlchemy autoflush bug.
 
-Every item above was verified against real inputs/tools, not just unit-level checks - see the Decisions and Progress-by-Layer sections for specifics. Known gaps: secret detection and container image scanning (Decision 6's other two layers) still have no library chosen; `pipeline.yaml`/`notebook/`/`Dockerfile` from README's fuller manifest sketch remain undefined since nothing consumes them; the manifest doesn't yet auto-create `Task` rows, only validates.*
+Every item above was verified against real inputs/tools, not just unit-level checks - see the Decisions and Progress-by-Layer sections for specifics. Known gaps: secret detection and container image scanning (Decision 6's other two layers) still have no library chosen; `pipeline.yaml`/`notebook/`/`Dockerfile` from README's fuller manifest sketch remain undefined since nothing consumes them; the manifest doesn't yet auto-create `Task` rows, only validates.
+
+A follow-up pass added an automated test suite (`tests/`, pytest, 104 tests - see Testing & Deployment) covering the areas above plus the routes wiring them together: auth/session bridge, task execution (mocked Docker for speed/portability, plus a small real-Docker suite auto-skipped when no daemon is reachable), cycle detection, the Governance Gate, security scanning, zip/manifest validation, RBAC, and upload/task routes end to end. Writing it surfaced two more real bugs, both fixed: `get_config()` ignores `create_app()`'s `config_env` and reads `FLASK_ENV` from the OS environment instead (worked around at the test-harness level, not yet fixed at the source - see `tests/README.md`); and a genuine cross-test race where a background task run from one test could still be executing when the next test started, colliding with a reused SQLite autoincrement id (fixed by draining the scheduler's thread pool between tests). Also corrected two items this document had left stale: "Git repository initialized" and "Security scanning wired up" were still shown `[ ]` despite both being done in earlier passes; and "Project manifest defined and validated" was done but still showing `[ ]` under Full Feature Set.*
