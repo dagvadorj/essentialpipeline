@@ -81,16 +81,24 @@ class ProjectVersion(db.Model):
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=False)
     version = db.Column(db.String(50), nullable=False)  # e.g., '1.0.0', '2.1.3'
     changelog = db.Column(db.Text)
-    
+
+    # Publish state (README's Develop -> ... -> Governance Gate -> Publish
+    # Version -> Deploy lifecycle). A version is created as unpublished;
+    # publishing is a distinct, gated action - see services/governance_gate.py.
+    is_published = db.Column(db.Boolean, default=False, nullable=False)
+    published_at = db.Column(db.DateTime)
+    published_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
     # Relationships
     files = db.relationship('ProjectFile', backref='project_version', lazy=True)
     # Task.project_version (below) already defines its own explicit backref
     # (tasks_list), so this must not also set backref='project_version'.
     tasks = db.relationship('Task', lazy=True, foreign_keys='Task.project_version_id', overlaps='tasks_list')
-    
+    published_by_user = db.relationship('User', foreign_keys=[published_by])
+
     def to_dict(self):
         """Convert project version to dictionary"""
         return {
@@ -98,6 +106,9 @@ class ProjectVersion(db.Model):
             'project_id': self.project_id,
             'version': self.version,
             'changelog': self.changelog,
+            'is_published': self.is_published,
+            'published_at': self.published_at.isoformat() if self.published_at else None,
+            'published_by': self.published_by,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
     

@@ -1,0 +1,23 @@
+# EssentialPipeline project manifest. Optional - a project uploaded
+# without one still works exactly as before (add tasks by hand via the
+# UI/API); this is validated on upload if present (see
+# essentialpipeline/utils/project_validation.py), but nothing yet
+# creates tasks from it automatically.
+name: hello-pipeline
+
+tasks:
+  - name: Say hello
+    type: python
+    script: main.py
+
+  - name: Extract
+    type: python
+    script: extract.py
+
+  - name: Transform
+    type: python
+    script: transform.py
+
+  - name: Load
+    type: python
+    script: load.py

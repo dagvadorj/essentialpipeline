@@ -6,7 +6,7 @@ from flask_admin import Admin, AdminIndexView
 from flask_admin.contrib.sqla import ModelView
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import redirect, url_for, request, abort
-from wtforms.validators import DataRequired
+from wtforms.validators import DataRequired, ValidationError
 from essentialpipeline import db
 
 
@@ -113,6 +113,34 @@ class TaskModelView(SecureModelView):
     column_filters = ['task_type', 'is_active', 'project_id']
 
 
+class TaskDependencyModelView(SecureModelView):
+    """
+    Custom view for TaskDependency model (Decision 5's DAG edges).
+
+    The only place a TaskDependency can currently be created - rejects
+    edges that would form a cycle (an unsatisfiable deadlock - see
+    services/task_dependencies.py) or that cross project boundaries.
+    """
+    column_list = ['task_id', 'depends_on_task_id']
+    # Flask-Admin's SQLA form generator treats primary-key columns as
+    # server-generated and leaves them out of the create form by default -
+    # not true here, since both PK columns are the actual FK data this
+    # model exists to hold. Force them in explicitly.
+    form_columns = ['task_id', 'depends_on_task_id']
+
+    def on_model_change(self, form, model, is_created):
+        from essentialpipeline.services.task_dependencies import creates_cycle, different_projects
+
+        if different_projects(model.task_id, model.depends_on_task_id):
+            raise ValidationError("A task can only depend on another task in the same project")
+
+        if creates_cycle(model.task_id, model.depends_on_task_id):
+            raise ValidationError(
+                f"Task {model.task_id} depending on task {model.depends_on_task_id} "
+                f"would create a cycle in the dependency graph"
+            )
+
+
 class MLModelModelView(SecureModelView):
     """Custom view for MLModel model"""
     column_list = ['id', 'name', 'project_id', 'model_type', 'is_active', 'created_at']
@@ -135,9 +163,9 @@ def configure_admin(app, admin_instance, db_instance):
     from essentialpipeline.models import (
         User, Group, Permission, Environment,
         DatabaseConnection, StorageConnection,
-        AuditLog, Project, Task, MLModel
+        AuditLog, Project, Task, TaskDependency, MLModel
     )
-    
+
     # Register model views
     admin_instance.add_view(UserModelView(User, db_instance.session, name='Users'))
     admin_instance.add_view(GroupModelView(Group, db_instance.session, name='Groups'))
@@ -148,6 +176,7 @@ def configure_admin(app, admin_instance, db_instance):
     admin_instance.add_view(AuditLogModelView(AuditLog, db_instance.session, name='Audit Logs'))
     admin_instance.add_view(ProjectModelView(Project, db_instance.session, name='Projects'))
     admin_instance.add_view(TaskModelView(Task, db_instance.session, name='Tasks'))
+    admin_instance.add_view(TaskDependencyModelView(TaskDependency, db_instance.session, name='Task Dependencies'))
     admin_instance.add_view(MLModelModelView(MLModel, db_instance.session, name='ML Models'))
     
     # Add to app

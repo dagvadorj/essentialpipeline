@@ -65,6 +65,13 @@ def new_project():
         # Check if project file was uploaded
         project_file = request.files.get('project_file')
         if project_file and project_file.filename:
+            from essentialpipeline.utils.project_validation import validate_project_zip, ProjectValidationError
+            try:
+                validate_project_zip(project_file)
+            except ProjectValidationError as e:
+                flash(str(e), 'danger')
+                return render_template('new.html', title='New Project')
+
             try:
                 # Save the uploaded file
                 file_result = save_file(project_file, subfolder='projects')
@@ -99,10 +106,13 @@ def new_project():
                 db.session.add(project_file_record)
                 
                 db.session.commit()
-                
+
+                from essentialpipeline.services.security_scan import scan_uploaded_version
+                scan_uploaded_version(version)
+
                 flash('Project created successfully!', 'success')
                 return redirect(url_for('user_projects.detail_project', project_id=project.id))
-                
+
             except Exception as e:
                 db.session.rollback()
                 current_app.logger.error(f"Error creating project: {e}")
@@ -168,6 +178,49 @@ def detail_project(project_id):
     )
 
 
+@bp.route('/<int:project_id>/versions/<int:version_id>/publish', methods=['POST'])
+@jwt_required()
+def publish_version(project_id, version_id):
+    """
+    Publish a project version, gated by the Governance Gate (security
+    scan + clearance checks - see services/governance_gate.py).
+    """
+    user_id = int(get_jwt_identity())
+    project = Project.query.get_or_404(project_id)
+
+    if project.owner_user_id != user_id:
+        flash('Access denied', 'danger')
+        return redirect(url_for('user_dashboard.index'))
+
+    version = ProjectVersion.query.get_or_404(version_id)
+    if version.project_id != project_id:
+        flash('Version does not belong to this project', 'danger')
+        return redirect(url_for('user_projects.detail_project', project_id=project_id))
+
+    if version.is_published:
+        flash(f'Version {version.version} is already published', 'info')
+        return redirect(url_for('user_projects.detail_project', project_id=project_id))
+
+    from essentialpipeline.models import User
+    from essentialpipeline.services.governance_gate import evaluate_publish_gate
+
+    user = User.query.get(user_id)
+    gate_result = evaluate_publish_gate(user, version)
+
+    if not gate_result['passed']:
+        failed = [c['message'] for c in gate_result['checks'] if not c['passed']]
+        flash(f"Publish blocked by governance gate: {'; '.join(failed)}", 'danger')
+        return redirect(url_for('user_projects.detail_project', project_id=project_id))
+
+    version.is_published = True
+    version.published_at = db.func.now()
+    version.published_by = user_id
+    db.session.commit()
+
+    flash(f'Version {version.version} published successfully!', 'success')
+    return redirect(url_for('user_projects.detail_project', project_id=project_id))
+
+
 @bp.route('/<int:project_id>/edit', methods=['GET', 'POST'])
 @jwt_required()
 def edit_project(project_id):
@@ -211,7 +264,14 @@ def upload_project_version(project_id):
         if not project_file or not project_file.filename:
             flash('Please select a file to upload', 'danger')
             return render_template('upload.html', title=f'Upload: {project.name}', project=project)
-        
+
+        from essentialpipeline.utils.project_validation import validate_project_zip, ProjectValidationError
+        try:
+            validate_project_zip(project_file)
+        except ProjectValidationError as e:
+            flash(str(e), 'danger')
+            return render_template('upload.html', title=f'Upload: {project.name}', project=project)
+
         try:
             # Save the uploaded file
             file_result = save_file(project_file, subfolder=f'projects/{project.id}')
@@ -247,7 +307,10 @@ def upload_project_version(project_id):
             db.session.add(project_file_record)
             
             db.session.commit()
-            
+
+            from essentialpipeline.services.security_scan import scan_uploaded_version
+            scan_uploaded_version(version)
+
             flash('New version uploaded successfully!', 'success')
             return redirect(url_for('user_projects.detail_project', project_id=project.id))
             

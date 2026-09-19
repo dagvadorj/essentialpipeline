@@ -20,6 +20,11 @@ try creating a project, adding tasks, and running them.
   just standalone scripts.
 - `requirements.txt` - empty; everything here only uses the standard
   library.
+- `project.yaml` - the project manifest, listing the same four tasks
+  above. Optional (a project without one still works, tasks just get
+  added by hand instead) - validated on upload if present, but nothing
+  yet creates tasks from it automatically, so step 2 below is still a
+  manual step even with this file included.
 
 ## Using it
 

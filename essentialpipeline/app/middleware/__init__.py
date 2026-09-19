@@ -19,6 +19,7 @@ def register_middleware(app):
     app.after_request(audit_log_middleware)
     
     # Error handling
+    app.errorhandler(403)(forbidden_handler)
     app.errorhandler(404)(not_found_handler)
     app.errorhandler(500)(internal_error_handler)
 
@@ -122,6 +123,22 @@ def extract_resource_id(path):
     return None
 
 
+def forbidden_handler(error):
+    """
+    Handle 403 errors (admin_required/project_access_required abort(403)).
+
+    Without this, abort(403) from an /api/* route returned Flask's default
+    HTML error page instead of JSON, inconsistent with every other error
+    response those routes return.
+    """
+    from flask import jsonify
+    description = getattr(error, 'description', None) or 'Forbidden'
+    logger.warning(f"403: {request.path} - {description}")
+    if request.path.startswith('/api/'):
+        return jsonify({'error': description}), 403
+    return description, 403
+
+
 def not_found_handler(error):
     """Handle 404 errors"""
     from flask import jsonify
@@ -173,17 +190,21 @@ def user_required(f):
 
 
 def project_access_required(f):
-    """Decorator to check project access"""
+    """
+    Decorator to check project access. Stashes the fetched project on
+    g.project so the wrapped view doesn't need to query for it again.
+    """
     @wraps(f)
     def decorated(project_id, *args, **kwargs):
         from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request
         from essentialpipeline.models import Project, User
-        
+
         verify_jwt_in_request()
         user_id = int(get_jwt_identity())
         user = User.query.get(user_id)
         project = Project.query.get_or_404(project_id)
-        
+        g.project = project
+
         # Check if user owns project or has access
         if project.owner_user_id != user_id:
             from flask import abort

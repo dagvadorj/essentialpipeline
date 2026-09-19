@@ -119,6 +119,7 @@
                                 <th>Changelog</th>
                                 <th>Created</th>
                                 <th>Current</th>
+                                <th>Published</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -139,12 +140,23 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <a href="#" class="btn btn-sm btn-outline-primary btn-action">
-                                        <i class="bi bi-eye"></i>
-                                    </a>
-                                    <a href="#" class="btn btn-sm btn-outline-success btn-action">
-                                        <i class="bi bi-arrow-up"></i>
-                                    </a>
+                                    {% if version.is_published %}
+                                    <span class="badge bg-success" title="{{ version.published_at.strftime('%Y-%m-%d %H:%M') if version.published_at else '' }}">
+                                        <i class="bi bi-patch-check"></i> Published
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Unpublished</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if not version.is_published %}
+                                    <form method="POST" action="{{ url_for('user_projects.publish_version', project_id=project.id, version_id=version.id) }}"
+                                          onsubmit="return confirm('Publish version {{ version.version }}? Published versions are immutable.');">
+                                        <button type="submit" class="btn btn-sm btn-outline-success btn-action" title="Publish (Governance Gate)">
+                                            <i class="bi bi-arrow-up"></i> Publish
+                                        </button>
+                                    </form>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
