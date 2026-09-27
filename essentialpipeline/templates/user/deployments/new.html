@@ -1,0 +1,59 @@
+{% extends "user/base.html" %}
+
+{% block title %}Request Deployment{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1><i class="bi bi-rocket-takeoff"></i> Request Deployment</h1>
+        <p class="text-muted">Only published versions of your own projects can be deployed.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8 col-md-10">
+        <div class="card">
+            <div class="card-body">
+                {% if published_versions %}
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="project_version_id" class="form-label">Published Version *</label>
+                        <select class="form-select" id="project_version_id" name="project_version_id" required>
+                            <option value="" disabled selected>Select a published version</option>
+                            {% for v in published_versions %}
+                            <option value="{{ v.id }}">{{ v.project.name }} - v{{ v.version }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="environment_id" class="form-label">Environment *</label>
+                        <select class="form-select" id="environment_id" name="environment_id" required>
+                            <option value="" disabled selected>Select an environment</option>
+                            {% for env in environments %}
+                            <option value="{{ env.id }}">{{ env.name }}{{ ' (production)' if env.is_production }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Production environments need a second, separate approval stage.</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check"></i> Request Deployment
+                        </button>
+                        <a href="{{ url_for('user_deployments.list_deployments') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+                {% else %}
+                <div class="text-center py-3">
+                    <p class="text-muted">You don't have any published versions yet.</p>
+                    <a href="{{ url_for('user_projects.list_projects') }}" class="btn btn-primary">
+                        <i class="bi bi-folder"></i> Go to Projects
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

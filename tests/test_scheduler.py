@@ -24,7 +24,12 @@ from essentialpipeline.services.scheduler import (
 from essentialpipeline.utils.docker import DockerExecutionError
 
 
-def _wait_for(predicate, timeout=5, interval=0.05):
+def _wait_for(predicate, timeout=20, interval=0.05):
+    # 20s, not 5s: this polls for a real (mocked, near-instant) background
+    # ThreadPoolExecutor task to complete, and returns as soon as the
+    # predicate is true - the longer ceiling only matters under system
+    # load (e.g. several full-suite runs going at once), where 5s was
+    # observed to occasionally time out on an otherwise-correct run.
     deadline = time.time() + timeout
     while time.time() < deadline:
         if predicate():

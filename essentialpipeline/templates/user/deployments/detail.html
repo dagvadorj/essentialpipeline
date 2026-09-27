@@ -1,0 +1,152 @@
+{% extends "user/base.html" %}
+
+{% block title %}Deployment #{{ deployment.id }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1><i class="bi bi-rocket-takeoff"></i> Deployment #{{ deployment.id }}</h1>
+                <p class="text-muted mb-0">
+                    {{ deployment.project_version.project.name }} - v{{ deployment.project_version.version }}
+                    &rarr;
+                    <span class="badge bg-{{ 'danger' if deployment.environment.is_production else 'secondary' }}">
+                        {{ deployment.environment.name }}
+                    </span>
+                </p>
+            </div>
+            <a href="{{ url_for('user_deployments.list_deployments') }}" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left"></i> Back to Deployments
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-info-circle"></i> Status</h5>
+                <p><span class="badge bg-{{ deployment.status_color }} fs-6">{{ deployment.status }}</span></p>
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">Requested by:</dt>
+                    <dd class="col-sm-7">{{ deployment.requested_by_user.username if deployment.requested_by_user else '-' }}</dd>
+                    <dt class="col-sm-5">Requested at:</dt>
+                    <dd class="col-sm-7">{{ deployment.requested_at.strftime('%Y-%m-%d %H:%M') if deployment.requested_at else '-' }}</dd>
+                    {% if deployment.deployed_at %}
+                    <dt class="col-sm-5">Deployed at:</dt>
+                    <dd class="col-sm-7">{{ deployment.deployed_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+                    {% endif %}
+                    {% if deployment.rollback_at %}
+                    <dt class="col-sm-5">Rolled back at:</dt>
+                    <dd class="col-sm-7">{{ deployment.rollback_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+                    <dt class="col-sm-5">Reason:</dt>
+                    <dd class="col-sm-7">{{ deployment.rollback_reason or '-' }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-lightning-charge"></i> Actions</h5>
+
+                {% if deployment.status in ('pending', 'approved_qa') and (deployment.status != 'approved_qa' or deployment.environment.is_production) %}
+                    {% if can_approve and not is_requester %}
+                    <div class="d-flex gap-2 mb-3">
+                        <form method="POST" action="{{ url_for('user_deployments.approve_deployment', deployment_id=deployment.id) }}" class="flex-grow-1">
+                            <input type="text" name="comments" class="form-control form-control-sm mb-2" placeholder="Comments (optional)">
+                            <button type="submit" class="btn btn-success w-100">
+                                <i class="bi bi-check-circle"></i> Approve {{ 'Prod' if deployment.status == 'approved_qa' else 'QA' }}
+                            </button>
+                        </form>
+                        <form method="POST" action="{{ url_for('user_deployments.reject_deployment', deployment_id=deployment.id) }}" class="flex-grow-1">
+                            <input type="text" name="comments" class="form-control form-control-sm mb-2" placeholder="Reason (optional)">
+                            <button type="submit" class="btn btn-danger w-100">
+                                <i class="bi bi-x-circle"></i> Reject
+                            </button>
+                        </form>
+                    </div>
+                    {% elif is_requester %}
+                    <p class="text-muted">Waiting for approval. You can't approve your own deployment request.</p>
+                    {% else %}
+                    <p class="text-muted">Waiting for someone with deployment-approve clearance to review this.</p>
+                    {% endif %}
+                {% endif %}
+
+                {% if (deployment.status == 'approved_qa' and not deployment.environment.is_production) or deployment.status == 'approved_prod' %}
+                    {% if can_manage %}
+                    <form method="POST" action="{{ url_for('user_deployments.deploy_deployment', deployment_id=deployment.id) }}">
+                        <button type="submit" class="btn btn-primary" onsubmit="return confirm('Mark this deployment as deployed?');">
+                            <i class="bi bi-rocket-takeoff"></i> Mark Deployed
+                        </button>
+                    </form>
+                    {% else %}
+                    <p class="text-muted">Approved - waiting for someone with deployment-manage clearance to deploy it.</p>
+                    {% endif %}
+                {% endif %}
+
+                {% if deployment.status == 'deployed' %}
+                    {% if can_manage %}
+                    <form method="POST" action="{{ url_for('user_deployments.rollback_deployment', deployment_id=deployment.id) }}">
+                        <input type="text" name="reason" class="form-control form-control-sm mb-2" placeholder="Rollback reason" required>
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-arrow-counterclockwise"></i> Roll Back
+                        </button>
+                    </form>
+                    {% else %}
+                    <p class="text-muted mb-0">Deployed.</p>
+                    {% endif %}
+                {% endif %}
+
+                {% if deployment.status in ('rejected_qa', 'rejected_prod', 'rolled_back') %}
+                <p class="text-muted mb-0">This deployment is in a terminal state.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Approval History</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if deployment.approvals %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Stage</th>
+                                <th>Decision</th>
+                                <th>By</th>
+                                <th>Comments</th>
+                                <th>When</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for a in deployment.approvals %}
+                            <tr>
+                                <td><span class="badge bg-secondary">{{ a.approval_type }}</span></td>
+                                <td><span class="badge bg-{{ 'success' if a.status == 'approved' else 'danger' }}">{{ a.status }}</span></td>
+                                <td>{{ a.approver.username if a.approver else '-' }}</td>
+                                <td>{{ a.comments or '-' }}</td>
+                                <td>{{ a.approved_at.strftime('%Y-%m-%d %H:%M') if a.approved_at else '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">No approval decisions yet.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

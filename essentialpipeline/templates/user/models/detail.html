@@ -1,0 +1,79 @@
+{% extends "user/base.html" %}
+
+{% block title %}Model: {{ model.name }}{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1><i class="bi bi-robot"></i> {{ model.name }}</h1>
+                <p class="text-muted mb-0">{{ model.description or 'No description' }}</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('user_models.edit_model', model_id=model.id) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-pencil"></i> Edit
+                </a>
+                <a href="{{ url_for('user_models.list_models') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-arrow-left"></i> Back to Models
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-info-circle"></i> Model Info</h5>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">Type:</dt>
+                    <dd class="col-sm-8">{{ model.model_type or '-' }}</dd>
+                    <dt class="col-sm-4">Project:</dt>
+                    <dd class="col-sm-8">
+                        {% if model.project %}
+                        <a href="{{ url_for('user_projects.detail_project', project_id=model.project.id) }}">{{ model.project.name }}</a>
+                        {% else %}-{% endif %}
+                    </dd>
+                    <dt class="col-sm-4">Status:</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge bg-{{ 'success' if model.is_active else 'secondary' }}">
+                            {{ 'Active' if model.is_active else 'Inactive' }}
+                        </span>
+                    </dd>
+                    <dt class="col-sm-4">Created:</dt>
+                    <dd class="col-sm-8">{{ model.created_at.strftime('%Y-%m-%d %H:%M') if model.created_at else '-' }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-box-seam"></i> Versions &amp; Execution</h5>
+                <p class="text-muted mb-0">
+                    Artifact upload/download and model execution aren't built yet
+                    (a separate, larger piece of work - see <code>plan.md</code>).
+                    This page only tracks the model record itself for now.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('user_models.delete_model', model_id=model.id) }}"
+                      onsubmit="return confirm('Delete this model?');">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash"></i> Delete Model
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

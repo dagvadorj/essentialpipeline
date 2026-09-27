@@ -74,20 +74,26 @@ def scan_project_version(project_version, source_dir: str):
         the created SecurityParseResult
     """
     from essentialpipeline import db
-    from essentialpipeline.models import SecurityParseResult, SecurityFinding
+    from essentialpipeline.models import SecurityParseResult, SecurityFinding, SecurityLog
+
+    parse_result = SecurityParseResult(
+        project_version_id=project_version.id,
+        parser_version='bandit==1.7.7,safety==2.3.5',
+        overall_status='passed'  # placeholder, set for real below once findings are known
+    )
+    db.session.add(parse_result)
+    db.session.flush()
+
+    db.session.add(SecurityLog(
+        parse_result_id=parse_result.id, level='info', event_type='scan_started',
+        message=f"Security scan started for version {project_version.id}"
+    ))
 
     findings = _run_bandit(source_dir) + _run_safety(source_dir)
 
     has_blocking = any(f['blocking'] for f in findings)
     overall_status = 'failed' if has_blocking else ('warning' if findings else 'passed')
-
-    parse_result = SecurityParseResult(
-        project_version_id=project_version.id,
-        parser_version='bandit==1.7.7,safety==2.3.5',
-        overall_status=overall_status
-    )
-    db.session.add(parse_result)
-    db.session.flush()
+    parse_result.overall_status = overall_status
 
     for f in findings:
         db.session.add(SecurityFinding(
@@ -100,6 +106,18 @@ def scan_project_version(project_version, source_dir: str):
             code_snippet=f.get('code_snippet'),
             recommendation=f.get('recommendation')
         ))
+        db.session.add(SecurityLog(
+            parse_result_id=parse_result.id,
+            level='warning' if f['blocking'] else 'info',
+            event_type='finding_detected',
+            message=f"{f['finding_type']} finding ({f['severity']}): {f['description'][:200]}",
+            details={'severity': f['severity'], 'blocking': f['blocking'], 'file_path': f.get('file_path')}
+        ))
+
+    db.session.add(SecurityLog(
+        parse_result_id=parse_result.id, level='info', event_type='scan_completed',
+        message=f"Security scan completed: {overall_status} ({len(findings)} findings)"
+    ))
 
     db.session.commit()
     logger.info(f"Security scan for version {project_version.id}: {overall_status} ({len(findings)} findings)")

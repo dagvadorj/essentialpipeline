@@ -282,7 +282,7 @@
                     <a href="{{ url_for('user_tasks.new_task', project_id=project.id) }}" class="btn btn-secondary">
                         <i class="bi bi-gear"></i> Configure Tasks
                     </a>
-                    <a href="#" class="btn btn-success">
+                    <a href="{{ url_for('user_deployments.new_deployment') }}" class="btn btn-success">
                         <i class="bi bi-rocket-takeoff"></i> Deploy
                     </a>
                     <form method="POST" action="{{ url_for('user_projects.delete_project', project_id=project.id) }}" 
