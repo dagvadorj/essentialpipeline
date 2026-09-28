@@ -55,6 +55,10 @@ class Config:
     # Execution
     DOCKER_ENABLED = os.environ.get('DOCKER_ENABLED', 'True').lower() == 'true'
     EXECUTION_TIMEOUT = int(os.environ.get('EXECUTION_TIMEOUT', 3600))  # 1 hour
+    # Model inference is meant to be quick and is callable on demand, so it gets
+    # a much tighter ceiling than a scheduled pipeline task.
+    MODEL_EXECUTION_TIMEOUT = int(os.environ.get('MODEL_EXECUTION_TIMEOUT', 300))
+    MODEL_INPUT_MAX_BYTES = int(os.environ.get('MODEL_INPUT_MAX_BYTES', 1024 * 1024))
     
     # Security
     SECURITY_SCAN_ENABLED = os.environ.get('SECURITY_SCAN_ENABLED', 'True').lower() == 'true'

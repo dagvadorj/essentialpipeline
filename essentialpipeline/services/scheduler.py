@@ -393,8 +393,7 @@ def extract_project_archive(project_version, dest_dir: str) -> None:
         DockerExecutionError: no uploaded archive, archive missing on
             disk, corrupt zip, or an unsafe path inside the archive
     """
-    import os
-    import zipfile
+    from essentialpipeline.utils.archive import safe_extract_zip, ArchiveError
     from essentialpipeline.utils.docker import DockerExecutionError
     from essentialpipeline.utils.storage import get_file_path
 
@@ -404,23 +403,10 @@ def extract_project_archive(project_version, dest_dir: str) -> None:
             f"Project version {project_version.id} has no uploaded archive to execute"
         )
 
-    zip_path = get_file_path(project_file.storage_path)
-    if not os.path.isfile(zip_path):
-        raise DockerExecutionError(f"Uploaded project archive not found on disk: {zip_path}")
-
-    dest_dir_real = os.path.realpath(dest_dir)
-
     try:
-        with zipfile.ZipFile(zip_path) as zf:
-            for member in zf.infolist():
-                member_path = os.path.realpath(os.path.join(dest_dir, member.filename))
-                if member_path != dest_dir_real and not member_path.startswith(dest_dir_real + os.sep):
-                    raise DockerExecutionError(
-                        f"Refusing to extract unsafe path '{member.filename}' from project archive"
-                    )
-            zf.extractall(dest_dir)
-    except zipfile.BadZipFile as e:
-        raise DockerExecutionError(f"Uploaded project archive is not a valid zip file: {e}")
+        safe_extract_zip(get_file_path(project_file.storage_path), dest_dir)
+    except ArchiveError as e:
+        raise DockerExecutionError(str(e))
 
 
 def execute_task_locally(task: Task, task_run: TaskRun) -> dict:
