@@ -148,6 +148,19 @@ class MLModelModelView(SecureModelView):
     column_filters = ['model_type', 'is_active', 'project_id']
 
 
+class AlertRuleModelView(SecureModelView):
+    """Custom view for AlertRule model - see services/alerting.py for condition_type/condition_config"""
+    column_list = ['id', 'name', 'condition_type', 'is_active', 'notification_channels', 'updated_at']
+    column_searchable_list = ['name']
+    column_filters = ['condition_type', 'is_active']
+    form_args = {
+        'name': {'validators': [DataRequired()]},
+        'condition_type': {'validators': [DataRequired()]},
+        'condition_config': {'validators': [DataRequired()]},
+        'notification_channels': {'validators': [DataRequired()]},
+    }
+
+
 def configure_admin(app, admin_instance, db_instance):
     """Configure Flask-Admin with all models"""
     
@@ -163,7 +176,7 @@ def configure_admin(app, admin_instance, db_instance):
     from essentialpipeline.models import (
         User, Group, Permission, Environment,
         DatabaseConnection, StorageConnection,
-        AuditLog, Project, Task, TaskDependency, MLModel
+        AuditLog, Project, Task, TaskDependency, MLModel, AlertRule
     )
 
     # Register model views
@@ -178,6 +191,7 @@ def configure_admin(app, admin_instance, db_instance):
     admin_instance.add_view(TaskModelView(Task, db_instance.session, name='Tasks'))
     admin_instance.add_view(TaskDependencyModelView(TaskDependency, db_instance.session, name='Task Dependencies'))
     admin_instance.add_view(MLModelModelView(MLModel, db_instance.session, name='ML Models'))
+    admin_instance.add_view(AlertRuleModelView(AlertRule, db_instance.session, name='Alert Rules'))
     
     # Add to app
     admin_instance.init_app(app)

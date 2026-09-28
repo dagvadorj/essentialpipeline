@@ -167,10 +167,10 @@ Status: decided. Pipeline side is implemented via `Task`/`TaskDependency`, scope
 ### Monitoring
 - [x] Models: `DeploymentLog`, `SecurityLog`, `ExecutionLog`, `SystemMetric`, `Alert`, `AlertRule`
 - [x] Health check endpoints (`/health`, `/api/v1/health`)
-- [ ] Structured/centralized logging service (currently ad hoc `logging` calls)
+- [x] Structured/centralized logging service (`utils/logging_config.py` - `configure_logging()` installs a JSON-line `StreamHandler` on the root logger from `LOG_LEVEL`, idempotent so it's safe under pytest/repeated `create_app()`; every existing `logging.getLogger(__name__)` call site gets structured output for free, no call sites touched)
 - [x] Log querying (`GET /api/v1/logs/{execution,deployment,security}`, paginated, filterable by level/source id) - not aggregation/export, which are separate, larger pieces of work (a real log-aggregation pipeline, and export tooling). Building this surfaced that `DeploymentLog` and `SecurityLog` were, like `Deployment`/`Approval` before the approval workflow, pure never-written data models - only `ExecutionLog` was actually populated. Now wired into `services/deployment.py` (one entry per state transition) and `services/security_scan.py` (scan_started/finding_detected per finding/scan_completed)
-- [ ] System metrics collection (model exists, nothing populates it)
-- [ ] Alerting (email/Slack)
+- [x] System metrics collection (`services/metrics.py` - `collect_system_metrics()` via `psutil`, cpu/memory/disk, scheduled as an APScheduler interval job (`METRICS_COLLECTION_INTERVAL_MINUTES`, default 1); best-effort, swallows a missing/failing `psutil` rather than taking the scheduler down)
+- [x] Alerting (email/webhook - not Slack specifically, but Slack Incoming Webhooks are exactly a JSON POST so `webhook` covers it) - `services/alerting.py` evaluates active `AlertRule`s on a schedule (`ALERT_EVALUATION_INTERVAL_MINUTES`); `threshold` (metric vs. operator/value) and `absence` (no metric in N minutes - catches the collector itself dying) condition types are implemented, `anomaly` is not (no statistical model chosen, same kind of open decision as Decision 6's remaining scanning tools). A firing rule creates an `Alert` and dedupes against any open/acknowledged alert for the same rule until it's resolved. `services/notifications.py` dispatches to `email` (`smtplib`, no-op if `SMTP_HOST` unset - same documented-gap pattern as `connection_health.py`) and `slack`/`webhook` (`requests.post`); one channel/target failing never blocks another or raises back into evaluation. Admin UI at `/admin/monitoring` (dashboard, metrics list, alerts list with acknowledge/resolve) plus `GET/POST /api/v1/admin/{metrics,alerts,alert-rules}`; `AlertRule` itself gets raw CRUD via Flask-Admin. 29 tests (`tests/test_monitoring.py`).
 
 ### API Layer
 - [x] JWT authentication (register/login/refresh/logout/me/list-users/password change)
@@ -188,7 +188,7 @@ Status: decided. Pipeline side is implemented via `Task`/`TaskDependency`, scope
 - [x] Git repository initialized - this was stale; a real repo with a GitHub remote (`origin`) has existed since early in the project's history, this checkbox had just never been updated
 
 ### Testing & Deployment
-- [x] Automated tests - `tests/` (pytest), covering the highest-risk/most-recently-fixed areas: task execution (mocked Docker, plus a small real-Docker-daemon suite auto-skipped when none is reachable), cycle detection, the Governance Gate, security scanning, zip/manifest validation, `admin_required`/`project_access_required`, and upload/task routes end to end. 174 tests, self-contained (in-memory SQLite, no external DB needed) and passing reliably (verified stable across repeated full-suite runs). `tests/README.md` covers how to run it and a real bug found while writing it: `get_config()` ignores `create_app()`'s `config_env` argument and reads `FLASK_ENV` from the OS environment instead - worked around at the test-harness level (`conftest.py` sets `FLASK_ENV=testing`), not yet fixed at the source.
+- [x] Automated tests - `tests/` (pytest), covering the highest-risk/most-recently-fixed areas: task execution (mocked Docker, plus a small real-Docker-daemon suite auto-skipped when none is reachable), cycle detection, the Governance Gate, security scanning, zip/manifest validation, `admin_required`/`project_access_required`, upload/task routes end to end, and monitoring/alerting (`tests/test_monitoring.py`). 203 tests, self-contained (in-memory SQLite, no external DB needed) and passing reliably (verified stable across repeated full-suite runs). `tests/README.md` covers how to run it and a real bug found while writing it: `get_config()` ignores `create_app()`'s `config_env` argument and reads `FLASK_ENV` from the OS environment instead - worked around at the test-harness level (`conftest.py` sets `FLASK_ENV=testing`), not yet fixed at the source. A separate, still-open flakiness: `tests/test_task_dependencies.py::test_legitimate_edge_created_via_admin_form` and several tests in `test_task_routes.py` intermittently fail together with a `PendingRollbackError` cascading from an `AttributeError: 'NoneType' object has no attribute '__dict__'` during a flush inside Flask-Admin's `on_model_change` handling - reproduced both before and after the P5 changes, so it predates this pass and is unrelated to it; not yet root-caused.
 - [ ] CI pipeline
 - [ ] Dockerfile for the app itself (distinct from `utils/docker.py`, which containerizes *uploaded projects*, not this app)
 
@@ -713,9 +713,9 @@ CREATE TABLE alert_rules (
 - [ ] All layers implemented, not just modeled
 - [x] Approval workflow working - see Scheduling & Deployment / `services/deployment.py`
 - [x] ML model execution functional - see Scheduling & Deployment (container-level tests pending a Docker run)
-- [ ] Comprehensive monitoring and alerting
+- [x] Comprehensive monitoring and alerting - see Monitoring; "comprehensive" specifically excludes anomaly-detection alerts and Slack's own API (webhook-only)
 - [x] Web UI covers tasks, deployments, and logs, not just projects/dashboard - see Web UI
-- [x] Automated test suite - `tests/` (pytest, 174 tests) - see Testing & Deployment
+- [x] Automated test suite - `tests/` (pytest, 203 tests) - see Testing & Deployment
 - [ ] Notebook-based progressive development, one per project, in the Web UI (Decision 8)
 - [ ] Secret detection and container image scanning wired up (Decision 6) - Bandit + Safety are wired (see Governance); these two remaining layers still have no library chosen
 - [x] Project manifest (`project.yaml`) defined and validated on upload - see Execution (this was already done and just stale here)

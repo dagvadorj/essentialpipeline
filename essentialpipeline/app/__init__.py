@@ -75,6 +75,11 @@ def create_app(config_env=None):
             pass
         return {'current_user': None}
 
+    # Structured JSON logging (root logger) - must happen before anything
+    # else logs, so it's as early as possible after config is loaded.
+    from essentialpipeline.utils.logging_config import configure_logging
+    configure_logging(app)
+
     # Configure admin (calls admin.init_app() itself, after views are registered)
     from essentialpipeline.app.admin_setup import configure_admin
     configure_admin(app, admin, db)
@@ -97,9 +102,16 @@ def create_app(config_env=None):
             db.create_all()
 
     # Register any active cron-scheduled tasks with APScheduler, after the
-    # tasks table above is guaranteed to exist.
+    # tasks table above is guaranteed to exist. schedule_all_tasks() calls
+    # scheduler.remove_all_jobs() first, so the monitoring jobs below must
+    # be added after it, not before.
     with app.app_context():
         schedule_all_tasks()
+
+    from essentialpipeline.services.metrics import schedule_metrics_collection
+    from essentialpipeline.services.alerting import schedule_alert_evaluation
+    schedule_metrics_collection(app)
+    schedule_alert_evaluation(app)
 
     return app
 

@@ -27,5 +27,9 @@ bandit==1.7.7
 # Optional: Security scanning
 safety==2.3.5
 
+# Monitoring
+psutil==6.1.0
+requests==2.32.3
+
 # Testing
 pytest==9.1.1

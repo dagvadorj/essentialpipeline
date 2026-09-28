@@ -11,7 +11,7 @@ from essentialpipeline import db
 from essentialpipeline.app.middleware import admin_required
 from essentialpipeline.models import (
     Group, Permission, Environment, DatabaseConnection, StorageConnection,
-    GroupConnectionClearance, AuditLog
+    GroupConnectionClearance, AuditLog, SystemMetric, Alert, AlertRule
 )
 
 bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -194,3 +194,86 @@ def list_audit_logs():
         'pages': pagination.pages,
         'total': pagination.total
     })
+
+
+# --- Monitoring: system metrics ---
+
+@bp.route('/metrics', methods=['GET'])
+@admin_required
+def list_metrics():
+    query = SystemMetric.query
+    metric_type = request.args.get('metric_type')
+    if metric_type:
+        query = query.filter_by(metric_type=metric_type)
+
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 200)
+    pagination = query.order_by(SystemMetric.timestamp.desc()).paginate(page=page, per_page=per_page, error_out=False)
+
+    return jsonify({
+        'metrics': [m.to_dict() for m in pagination.items],
+        'page': pagination.page,
+        'pages': pagination.pages,
+        'total': pagination.total
+    })
+
+
+# --- Monitoring: alerts ---
+
+@bp.route('/alerts', methods=['GET'])
+@admin_required
+def list_alerts():
+    query = Alert.query
+    status = request.args.get('status')
+    if status:
+        query = query.filter_by(status=status)
+
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 200)
+    pagination = query.order_by(Alert.triggered_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+
+    return jsonify({
+        'alerts': [a.to_dict() for a in pagination.items],
+        'page': pagination.page,
+        'pages': pagination.pages,
+        'total': pagination.total
+    })
+
+
+@bp.route('/alerts/<int:alert_id>/acknowledge', methods=['POST'])
+@admin_required
+def acknowledge_alert_route(alert_id):
+    from essentialpipeline.services.alerting import acknowledge_alert
+
+    alert = Alert.query.get_or_404(alert_id)
+    try:
+        acknowledge_alert(alert)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify(alert.to_dict())
+
+
+@bp.route('/alerts/<int:alert_id>/resolve', methods=['POST'])
+@admin_required
+def resolve_alert_route(alert_id):
+    from flask_jwt_extended import get_jwt_identity
+    from essentialpipeline.models import User
+    from essentialpipeline.services.alerting import resolve_alert
+
+    alert = Alert.query.get_or_404(alert_id)
+    actor = User.query.get(int(get_jwt_identity()))
+    data = request.get_json(silent=True) or {}
+    try:
+        resolve_alert(alert, actor, notes=data.get('notes'))
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify(alert.to_dict())
+
+
+# --- Monitoring: alert rules (read-only here - full CRUD via Flask-Admin) ---
+
+@bp.route('/alert-rules', methods=['GET'])
+@admin_required
+def list_alert_rules():
+    rules = AlertRule.query.order_by(AlertRule.name).all()
+    return jsonify({'alert_rules': [r.to_dict() for r in rules]})

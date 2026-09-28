@@ -66,6 +66,21 @@ class Config:
     # Logging
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
+    # Monitoring
+    METRICS_COLLECTION_INTERVAL_MINUTES = int(os.environ.get('METRICS_COLLECTION_INTERVAL_MINUTES', 1))
+    ALERT_EVALUATION_INTERVAL_MINUTES = int(os.environ.get('ALERT_EVALUATION_INTERVAL_MINUTES', 1))
+
+    # Alerting - email. Unset SMTP_HOST means email notifications are a
+    # documented no-op rather than pretending to have sent something (the
+    # same pattern utils/connection_health.py uses for connection types
+    # with no driver installed).
+    SMTP_HOST = os.environ.get('SMTP_HOST')
+    SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
+    SMTP_USERNAME = os.environ.get('SMTP_USERNAME')
+    SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD')
+    SMTP_FROM_ADDRESS = os.environ.get('SMTP_FROM_ADDRESS', 'alerts@essentialpipeline.local')
+    SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', 'True').lower() == 'true'
+
 
 class DevelopmentConfig(Config):
     """Development configuration"""
